@@ -1,0 +1,55 @@
+disabled_rules:
+  - trailing_whitespace
+  - todo
+opt_in_rules:
+  - empty_count
+  - empty_string
+  - fatal_error_message
+  - file_name_no_space
+  - first_where
+  - force_unwrapping
+  - implicitly_unwrapped_optional
+  - last_where
+  - legacy_random
+  - legacy_multiple
+  - operator_usage_whitespace
+  - overridden_super_call
+  - pattern_matching_keywords
+  - redundant_nil_coalescing
+  - redundant_type_annotation
+  - strict_file_private
+  - toggle_bool
+  - unneeded_parentheses_in_closure_argument
+  - vertical_parameter_alignment_on_call
+  - vertical_whitespace_closing_braces
+  - vertical_whitespace_opening_braces
+  - yoda_condition
+
+excluded:
+  - Carthage
+  - Pods
+  - SwiftLint/Common/3rdPartyLib
+  - Source/ExcludedFolder
+  - Source/ExcludedFile.swift
+
+line_length: 120
+file_length:
+  warning: 500
+  error: 1200
+type_body_length:
+  warning: 300
+  error: 400
+function_body_length:
+  warning: 60
+  error: 100
+identifier_name:
+  min_length: 3
+  max_length: 60
+  excluded:
+    - id
+    - x
+    - y
+    - z
+    - i
+    - j
+    - k

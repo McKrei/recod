@@ -1,0 +1,24 @@
+{
+    "configurations": [
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:MacAudio2}",
+            "name": "Debug MacAudio2",
+            "target": "MacAudio2",
+            "configuration": "debug",
+            "preLaunchTask": "swift: Build Debug MacAudio2"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:MacAudio2}",
+            "name": "Release MacAudio2",
+            "target": "MacAudio2",
+            "configuration": "release",
+            "preLaunchTask": "swift: Build Release MacAudio2"
+        }
+    ]
+}
