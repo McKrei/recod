@@ -6,7 +6,7 @@ import PackageDescription
 let package = Package(
     name: "MacAudio2",
     platforms: [
-        .macOS(.v14)
+        .macOS(.v15)
     ],
     products: [
         .executable(
@@ -14,10 +14,15 @@ let package = Package(
             targets: ["MacAudio2"]
         )
     ],
-    dependencies: [],
+    dependencies: [
+        .package(url: "https://github.com/argmaxinc/WhisperKit.git", from: "0.9.0")
+    ],
     targets: [
         .executableTarget(
             name: "MacAudio2",
+            dependencies: [
+                .product(name: "WhisperKit", package: "WhisperKit")
+            ],
             path: "Sources",
             exclude: [],
             swiftSettings: [

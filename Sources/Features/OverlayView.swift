@@ -24,34 +24,54 @@ struct OverlayView: View {
                 )
                 .shadow(color: .black.opacity(0.2), radius: 10, x: 0, y: 5)
 
-            if isUIReady {
-                Group {
-                    // Pulsating Pulse
-                    Circle()
-                        .stroke(.red.opacity(0.6), lineWidth: 2)
-                        .frame(width: 20, height: 20)
-                        .scaleEffect(isAnimating ? 2.2 : 1.0)
-                        .opacity(isAnimating ? 0 : 1)
-                        .animation(.easeOut(duration: 1.5).repeatForever(autoreverses: false), value: isAnimating)
+            if appState.overlayStatus == .recording {
+                if isUIReady {
+                    Group {
+                        // Pulsating Pulse
+                        Circle()
+                            .stroke(.red.opacity(0.6), lineWidth: 2)
+                            .frame(width: 20, height: 20)
+                            .scaleEffect(isAnimating ? 2.2 : 1.0)
+                            .opacity(isAnimating ? 0 : 1)
+                            .animation(.easeOut(duration: 1.5).repeatForever(autoreverses: false), value: isAnimating)
 
-                    // Recording Icon
-                    Image(systemName: "mic.fill")
-                        .font(.system(size: 20))
-                        .foregroundStyle(.red)
+                        // Recording Icon
+                        Image(systemName: "mic.fill")
+                            .font(.system(size: 20))
+                            .foregroundStyle(.red)
+                    }
+                    .transition(.asymmetric(
+                        insertion: .scale(scale: 0.8).combined(with: .opacity),
+                        removal: .opacity
+                    ))
+                } else {
+                    // Loading / Preparing State
+                    ProgressView()
+                        .controlSize(.small)
+                        .tint(.white)
+                        .transition(.opacity)
                 }
-                .transition(.asymmetric(
-                    insertion: .scale(scale: 0.8).combined(with: .opacity),
-                    removal: .opacity
-                ))
-            } else {
-                // Loading / Preparing State
+            } else if appState.overlayStatus == .transcribing {
                 ProgressView()
                     .controlSize(.small)
                     .tint(.white)
                     .transition(.opacity)
+            } else if appState.overlayStatus == .success {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: 24))
+                    .foregroundStyle(.green)
+                    .symbolEffect(.bounce)
+                    .transition(.scale.combined(with: .opacity))
+            } else if appState.overlayStatus == .error {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.system(size: 24))
+                    .foregroundStyle(.red)
+                    .symbolEffect(.bounce)
+                    .transition(.scale.combined(with: .opacity))
             }
         }
         .animation(.spring(duration: 0.4), value: isUIReady)
+        .animation(.spring(duration: 0.4), value: appState.overlayStatus)
         .onAppear {
             startFakeDelay()
         }

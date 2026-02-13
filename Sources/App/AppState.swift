@@ -14,8 +14,16 @@ import AVFoundation
 class AppState: ObservableObject {
     static let shared = AppState()
 
+    enum OverlayStatus {
+        case recording
+        case transcribing
+        case success
+        case error
+    }
+
     @Published public var isRecording = false
     @Published public var isOverlayVisible = false
+    @Published public var overlayStatus: OverlayStatus = .recording
     
     // Injected by App
     public var modelContext: ModelContext?
@@ -37,10 +45,6 @@ class AppState: ObservableObject {
             .receive(on: RunLoop.main)
             .sink { [weak self] recording in
                 self?.isRecording = recording
-                // If recording stopped externally (e.g. error), hide overlay
-                if !recording {
-                    self?.isOverlayVisible = false
-                }
             }
             .store(in: &cancellables)
     }
@@ -64,7 +68,15 @@ class AppState: ObservableObject {
 
     func startRecording() {
         Task {
+            if let modelId = whisperModelManager.selectedModelId,
+               let modelURL = whisperModelManager.getModelURL(for: modelId) {
+                Task {
+                    await TranscriptionService.shared.prepareModel(modelURL: modelURL)
+                }
+            }
+            
             do {
+                overlayStatus = .recording
                 try await audioRecorder.startRecording()
                 self.isOverlayVisible = true
             } catch {
@@ -76,8 +88,14 @@ class AppState: ObservableObject {
     func stopRecording() {
         Task {
             if let url = await audioRecorder.stopRecording() {
-                self.isOverlayVisible = false
-                await saveRecording(url: url)
+                if let modelId = whisperModelManager.selectedModelId,
+                   whisperModelManager.getModelURL(for: modelId) != nil {
+                    overlayStatus = .transcribing
+                    await saveRecording(url: url)
+                } else {
+                    self.isOverlayVisible = false
+                    await saveRecording(url: url)
+                }
             } else {
                 self.isOverlayVisible = false
             }
@@ -87,6 +105,7 @@ class AppState: ObservableObject {
     private func saveRecording(url: URL) async {
         guard let modelContext = modelContext else {
             await FileLogger.shared.log("ModelContext not set in AppState", level: .error)
+            self.isOverlayVisible = false
             return
         }
         
@@ -95,7 +114,6 @@ class AppState: ObservableObject {
             let duration = try await asset.load(.duration).seconds
             let filename = url.lastPathComponent
             
-            // Get creation date from file attributes
             let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
             let creationDate = attributes[.creationDate] as? Date ?? Date()
             
@@ -109,8 +127,43 @@ class AppState: ObservableObject {
             try modelContext.save()
             
             await FileLogger.shared.log("Saved new recording: \(filename)")
+            
+            if let modelId = whisperModelManager.selectedModelId,
+               let modelURL = whisperModelManager.getModelURL(for: modelId) {
+                
+                recording.transcriptionStatus = .transcribing
+                try? modelContext.save()
+                
+                do {
+                    let text = try await TranscriptionService.shared.transcribe(audioURL: url, modelURL: modelURL)
+                    recording.transcription = text
+                    recording.transcriptionStatus = .completed
+                    try modelContext.save()
+                    
+                    overlayStatus = .success
+                    await FileLogger.shared.log("Transcription completed for: \(filename)")
+                    
+                    try? await Task.sleep(nanoseconds: 1_500_000_000)
+                    self.isOverlayVisible = false
+                } catch {
+                    recording.transcriptionStatus = .failed
+                    try? modelContext.save()
+                    
+                    overlayStatus = .error
+                    await FileLogger.shared.log("Transcription failed: \(error)", level: .error)
+                    
+                    try? await Task.sleep(nanoseconds: 2_000_000_000)
+                    self.isOverlayVisible = false
+                }
+            } else {
+                recording.transcriptionStatus = .failed
+                try? modelContext.save()
+                self.isOverlayVisible = false
+            }
+            
         } catch {
             await FileLogger.shared.log("Failed to save recording metadata: \(error)", level: .error)
+            self.isOverlayVisible = false
         }
     }
 

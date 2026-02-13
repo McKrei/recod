@@ -79,11 +79,32 @@ struct HistoryRowView: View {
                 }
                 
                 Group {
-                    if let transcription = recording.transcription, !transcription.isEmpty {
-                        Text(transcription)
-                            .foregroundStyle(.primary)
-                    } else {
-                        Text("No transcription")
+                    switch recording.transcriptionStatus ?? .completed {
+                    case .transcribing:
+                        HStack(spacing: 8) {
+                            ProgressView()
+                                .controlSize(.small)
+                            Text("Transcribing...")
+                                .foregroundStyle(.secondary)
+                        }
+                    case .completed:
+                        if let transcription = recording.transcription, !transcription.isEmpty {
+                            Text(transcription)
+                                .foregroundStyle(.primary)
+                        } else {
+                            Text("Empty transcription")
+                                .italic()
+                                .foregroundStyle(.secondary)
+                        }
+                    case .failed:
+                        HStack(spacing: 4) {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .foregroundStyle(.orange)
+                            Text("Transcription failed")
+                                .foregroundStyle(.secondary)
+                        }
+                    case .pending:
+                        Text("Pending...")
                             .italic()
                             .foregroundStyle(.secondary)
                     }
@@ -134,9 +155,9 @@ struct HistoryRowView: View {
     let container = try! ModelContainer(for: Recording.self, configurations: config)
     
     let samples = [
-        Recording(createdAt: .now, duration: 125, transcription: "Hello world, this is a test recording.", filename: "rec1.m4a"),
-        Recording(createdAt: .now.addingTimeInterval(-3600), duration: 45, transcription: nil, filename: "rec2.m4a"),
-        Recording(createdAt: .now.addingTimeInterval(-86400), duration: 320, transcription: "Long meeting notes about the project status.", filename: "rec3.m4a")
+        Recording(createdAt: .now, duration: 125, transcription: "Hello world, this is a test recording.", transcriptionStatus: .completed, filename: "rec1.m4a"),
+        Recording(createdAt: .now.addingTimeInterval(-3600), duration: 45, transcription: nil, transcriptionStatus: .transcribing, filename: "rec2.m4a"),
+        Recording(createdAt: .now.addingTimeInterval(-86400), duration: 320, transcription: "Long meeting notes about the project status.", transcriptionStatus: .completed, filename: "rec3.m4a")
     ]
     
     for sample in samples {

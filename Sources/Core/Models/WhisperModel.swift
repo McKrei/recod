@@ -1,39 +1,42 @@
 import Foundation
 
 enum WhisperModelType: String, CaseIterable, Identifiable, Codable, Sendable {
-    case tiny
-    case base
-    case small
-    case medium
-    case largeV3 = "large-v3"
-    case largeV3Turbo = "large-v3-turbo"
+    case tiny = "openai_whisper-tiny"
+    case base = "openai_whisper-base"
+    case small = "openai_whisper-small"
+    case medium = "openai_whisper-medium"
+    case largeV3 = "openai_whisper-large-v3"
+    case largeV3Turbo = "openai_whisper-large-v3_turbo"
     
     var id: String { rawValue }
     
     var displayName: String {
         switch self {
+        case .tiny: return "Tiny"
+        case .base: return "Base"
+        case .small: return "Small"
+        case .medium: return "Medium"
         case .largeV3: return "Large v3"
         case .largeV3Turbo: return "Large v3 Turbo"
-        default: return rawValue.capitalized
         }
     }
     
-    var filename: String {
-        "ggml-\(rawValue).bin"
+    var variantName: String {
+        rawValue.replacingOccurrences(of: "openai_whisper-", with: "")
     }
     
-    var url: URL {
-        URL(string: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/\(filename)")!
+    var filename: String {
+        rawValue
     }
     
     var approximateSize: String {
         switch self {
-        case .tiny: return "75 MB"
-        case .base: return "142 MB"
-        case .small: return "466 MB"
-        case .medium: return "1.5 GB"
-        case .largeV3: return "3.09 GB"
-        case .largeV3Turbo: return "1.6 GB"
+        case .tiny: return "40 MB"
+        case .base: return "80 MB"
+        case .small: return "250 MB"
+        case .medium: return "800 MB"
+        case .largeV3: return "1.6 GB"
+        case .largeV3Turbo: return "900 MB"
         }
     }
 }

@@ -1,19 +1,17 @@
 import Foundation
 import SwiftUI
 import Observation
+import WhisperKit
 
 @MainActor
 @Observable
-final class WhisperModelManager: NSObject, URLSessionDownloadDelegate {
+final class WhisperModelManager: NSObject {
     var models: [WhisperModel] = []
     var selectedModelId: String? {
         didSet {
             UserDefaults.standard.set(selectedModelId, forKey: "selectedWhisperModelId")
         }
     }
-    
-    private var downloadTasks: [String: URLSessionDownloadTask] = [:]
-    private var urlSession: URLSession!
     
     nonisolated private var modelsDirectory: URL {
         let paths = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)
@@ -27,11 +25,16 @@ final class WhisperModelManager: NSObject, URLSessionDownloadDelegate {
         return modelsDir
     }
     
+    /// The actual path where WhisperKit stores models relative to downloadBase
+    nonisolated private var whisperKitModelsPath: URL {
+        modelsDirectory
+            .appendingPathComponent("models")
+            .appendingPathComponent("argmaxinc")
+            .appendingPathComponent("whisperkit-coreml")
+    }
+    
     override init() {
         super.init()
-        let config = URLSessionConfiguration.default
-        self.urlSession = URLSession(configuration: config, delegate: self, delegateQueue: nil)
-        
         self.selectedModelId = UserDefaults.standard.string(forKey: "selectedWhisperModelId")
         self.loadModels()
     }
@@ -44,8 +47,8 @@ final class WhisperModelManager: NSObject, URLSessionDownloadDelegate {
         let fileManager = FileManager.default
         for i in 0..<initialModels.count {
             let model = initialModels[i]
-            let fileURL = modelsDirectory.appendingPathComponent(model.type.filename)
-            if fileManager.fileExists(atPath: fileURL.path) {
+            let modelFolder = whisperKitModelsPath.appendingPathComponent(model.type.filename)
+            if fileManager.fileExists(atPath: modelFolder.path) {
                 initialModels[i].isDownloaded = true
             }
         }
@@ -66,18 +69,48 @@ final class WhisperModelManager: NSObject, URLSessionDownloadDelegate {
         models[index].isDownloading = true
         models[index].downloadProgress = 0.0
         
-        let task = urlSession.downloadTask(with: model.type.url)
-        task.taskDescription = model.id
-        downloadTasks[model.id] = task
-        task.resume()
+        Task {
+            do {
+                await FileLogger.shared.log("Starting WhisperKit download for variant: \(model.type.variantName)")
+                
+                _ = try await WhisperKit.download(
+                    variant: model.type.variantName,
+                    downloadBase: modelsDirectory,
+                    progressCallback: { @Sendable progress in
+                        Task { @MainActor in
+                            if let idx = self.models.firstIndex(where: { $0.id == model.id }) {
+                                self.models[idx].downloadProgress = progress.fractionCompleted
+                                // Log progress every 10% to avoid log spam but show activity
+                                if Int(progress.fractionCompleted * 100) % 10 == 0 {
+                                     // Silent update for UI
+                                }
+                            }
+                        }
+                    }
+                )
+                
+                await FileLogger.shared.log("Download successful: \(model.type.variantName)")
+                
+                await MainActor.run {
+                    if let idx = models.firstIndex(where: { $0.id == model.id }) {
+                        models[idx].isDownloading = false
+                        models[idx].isDownloaded = true
+                        models[idx].downloadProgress = 1.0
+                    }
+                }
+            } catch {
+                await FileLogger.shared.log("WhisperKit download failed: \(error)", level: .error)
+                await MainActor.run {
+                    if let idx = models.firstIndex(where: { $0.id == model.id }) {
+                        models[idx].isDownloading = false
+                        models[idx].downloadProgress = 0.0
+                    }
+                }
+            }
+        }
     }
     
     func cancelDownload(_ model: WhisperModel) {
-        if let task = downloadTasks[model.id] {
-            task.cancel()
-            downloadTasks.removeValue(forKey: model.id)
-        }
-        
         if let index = models.firstIndex(where: { $0.id == model.id }) {
             models[index].isDownloading = false
             models[index].downloadProgress = 0.0
@@ -85,8 +118,8 @@ final class WhisperModelManager: NSObject, URLSessionDownloadDelegate {
     }
     
     func deleteModel(_ model: WhisperModel) {
-        let fileURL = modelsDirectory.appendingPathComponent(model.type.filename)
-        try? FileManager.default.removeItem(at: fileURL)
+        let modelFolder = whisperKitModelsPath.appendingPathComponent(model.type.filename)
+        try? FileManager.default.removeItem(at: modelFolder)
         
         if let index = models.firstIndex(where: { $0.id == model.id }) {
             models[index].isDownloaded = false
@@ -96,91 +129,17 @@ final class WhisperModelManager: NSObject, URLSessionDownloadDelegate {
     
     func selectModel(_ model: WhisperModel) {
         selectedModelId = model.id
+        TranscriptionService.shared.clearCache()
     }
     
-    // MARK: - URLSessionDownloadDelegate
+    // MARK: - Helper Methods
     
-    nonisolated func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didFinishDownloadingTo location: URL) {
-        guard let modelId = downloadTask.taskDescription else { return }
-        
-        let destinationURL = getDestinationURL(for: modelId)
-        
-        do {
-            if FileManager.default.fileExists(atPath: destinationURL.path) {
-                try FileManager.default.removeItem(at: destinationURL)
-            }
-            try FileManager.default.moveItem(at: location, to: destinationURL)
-            
-            Task { @MainActor in
-                self.completeDownload(for: modelId)
-            }
-        } catch {
-            print("Error moving model file: \(error)")
-            Task { @MainActor in
-                self.failDownload(for: modelId)
-            }
+    nonisolated public func getModelURL(for modelId: String) -> URL? {
+        guard let type = WhisperModelType(rawValue: modelId) else { return nil }
+        let url = whisperKitModelsPath.appendingPathComponent(type.filename)
+        if FileManager.default.fileExists(atPath: url.path) {
+            return url
         }
-    }
-    
-    nonisolated func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didWriteData bytesWritten: Int64, totalBytesWritten: Int64, totalBytesExpectedToWrite: Int64) {
-        guard let modelId = downloadTask.taskDescription else { return }
-        
-        let progress = Double(totalBytesWritten) / Double(totalBytesExpectedToWrite)
-        
-        Task { @MainActor in
-            self.updateProgress(for: modelId, progress: progress)
-        }
-    }
-    
-    nonisolated func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
-        if let error = error as? URLError, error.code == .cancelled {
-            return
-        }
-        if let error = error {
-            print("Download error: \(error)")
-            guard let modelId = task.taskDescription else { return }
-            Task { @MainActor in
-                self.failDownload(for: modelId)
-            }
-        }
-    }
-    
-    // MARK: - Helper Methods (MainActor)
-    
-    nonisolated private func getDestinationURL(for modelId: String) -> URL {
-        guard let type = WhisperModelType(rawValue: modelId) else {
-             fatalError("Invalid model ID")
-        }
-        
-        let paths = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)
-        let appSupportDir = paths[0].appendingPathComponent("MacAudio2")
-        let modelsDir = appSupportDir.appendingPathComponent("Models")
-        return modelsDir.appendingPathComponent(type.filename)
-    }
-
-    @MainActor
-    private func updateProgress(for modelId: String, progress: Double) {
-        if let index = models.firstIndex(where: { $0.id == modelId }) {
-            models[index].downloadProgress = progress
-        }
-    }
-    
-    @MainActor
-    private func completeDownload(for modelId: String) {
-        downloadTasks.removeValue(forKey: modelId)
-        if let index = models.firstIndex(where: { $0.id == modelId }) {
-            models[index].isDownloading = false
-            models[index].isDownloaded = true
-            models[index].downloadProgress = 1.0
-        }
-    }
-    
-    @MainActor
-    private func failDownload(for modelId: String) {
-        downloadTasks.removeValue(forKey: modelId)
-        if let index = models.firstIndex(where: { $0.id == modelId }) {
-            models[index].isDownloading = false
-            models[index].downloadProgress = 0.0
-        }
+        return nil
     }
 }

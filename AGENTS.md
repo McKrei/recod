@@ -75,8 +75,15 @@ Resources/       # Assets, Strings, Plists
     - **Reuse components:** Check `Sources/DesignSystem` before creating new styles.
 4.  **Verify:** Ensure Swift 6 compliance and no UI regressions.
 
-## 7. Critical Behaviors & Latency Handling
-- **Audio Recording:**
-  - **Start:** `AudioRecorder` uses `engine.prepare()` before starting to pre-warm hardware.
-  - **Stop:** `stopRecording()` includes a **0.5s delay** before stopping the engine to capture the "tail" of speech (preventing cut-off).
-  - **UI UX:** The `OverlayView` implements a **fake loading state (0.5s)** when recording starts. This forces the user to wait slightly before speaking, ensuring the audio engine is fully stable and AGC is active. **DO NOT REMOVE THIS DELAY.**
+## 8. AI & Transcription Engine
+- **Engine:** WhisperKit (by Argmax).
+- **Architecture:**
+  - Optimized for Apple Silicon (Neural Engine + GPU).
+  - Uses CoreML models (`.mlmodelc`) instead of raw `.bin` files.
+- **Service Layer:** `TranscriptionService` (Singleton, `@MainActor`).
+  - **Two-Pass Logic:**
+    1.  **Language Detection:** Explicitly runs `kit.detectLanguage()` on the audio file first.
+    2.  **Transcription:** Runs `kit.transcribe()` with `task: .transcribe` and the detected language. This prevents accidental translation to English.
+- **Model Management:**
+  - `WhisperModelManager` handles downloading/deleting models via WhisperKit's built-in downloader.
+  - Models are stored in `~/Library/Application Support/MacAudio2/Models/models/argmaxinc/whisperkit-coreml`.
