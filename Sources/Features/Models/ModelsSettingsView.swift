@@ -32,36 +32,36 @@ struct ModelsSettingsView: View {
                 }
                 .groupBoxStyle(GlassGroupBoxStyle())
                 
-                GroupBox {
-                    VStack(spacing: 0) {
-                        ForEach(modelManager.models) { model in
-                            WhisperModelRow(
-                                model: model,
-                                isSelected: modelManager.selectedModelId == model.id,
-                                onSelect: {
+                VStack(spacing: AppTheme.spacing) {
+                    ForEach(modelManager.models) { model in
+                        WhisperModelRow(
+                            model: model,
+                            isSelected: modelManager.selectedModelId == model.id,
+                            onSelect: {
+                                withAnimation {
                                     modelManager.selectModel(model)
-                                },
-                                onDownload: {
+                                }
+                            },
+                            onDownload: {
+                                withAnimation {
                                     modelManager.downloadModel(model)
-                                },
-                                onCancel: {
+                                }
+                            },
+                            onCancel: {
+                                withAnimation {
                                     modelManager.cancelDownload(model)
-                                },
-                                onDelete: {
+                                }
+                            },
+                            onDelete: {
+                                withAnimation {
                                     modelManager.deleteModel(model)
                                 }
-                            )
-                            
-                            if model.id != modelManager.models.last?.id {
-                                Divider()
                             }
-                        }
+                        )
                     }
-                    .padding(0)
                 }
-                .groupBoxStyle(GlassGroupBoxStyle())
             }
-            .padding(30)
+            .padding(AppTheme.pagePadding)
         }
     }
 }

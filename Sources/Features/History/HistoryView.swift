@@ -23,7 +23,7 @@ struct HistoryView: View {
                             }
                         }
                     }
-                    .padding(AppTheme.padding)
+                    .padding(AppTheme.pagePadding)
                 }
                 .scrollContentBackground(.hidden)
             }
@@ -94,14 +94,7 @@ struct HistoryRowView: View {
             
             deleteButton
         }
-        .padding(AppTheme.padding)
-        .background(AppTheme.glassMaterial)
-        .clipShape(RoundedRectangle(cornerRadius: AppTheme.cornerRadius))
-        .shadow(color: AppTheme.shadowColor, radius: AppTheme.shadowRadius, x: 0, y: AppTheme.shadowY)
-        .overlay(
-            RoundedRectangle(cornerRadius: AppTheme.cornerRadius)
-                .stroke(Color.white.opacity(isHovering ? 0.2 : 0), lineWidth: 1)
-        )
+        .glassRowStyle(isHovering: isHovering)
         .onHover { isHovering = $0 }
         .contextMenu {
             Button(role: .destructive, action: onDelete) {
@@ -111,15 +104,8 @@ struct HistoryRowView: View {
     }
     
     private var deleteButton: some View {
-        Button(role: .destructive, action: onDelete) {
-            Image(systemName: "trash")
-                .font(.system(size: 14))
-                .foregroundStyle(isHovering ? Color.red : Color.secondary)
-                .opacity(isHovering ? 1.0 : 0.6)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .padding(.leading, 8)
+        DeleteIconButton(action: onDelete)
+            .padding(.leading, 8)
     }
     
     private var playPauseButton: some View {

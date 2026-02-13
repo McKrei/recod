@@ -13,6 +13,10 @@
 - **Central Theme:** All styling (padding, radii, materials) MUST come from `AppTheme` struct.
   - **NO HARDCODED VALUES.**
 - **Materials over Colors:** Use `AppTheme.glassMaterial` instead of solid background colors.
+- **Components:**
+  - Use `glassRowStyle()` for list items (History, Models, etc).
+  - Use `DeleteIconButton` for destructive actions.
+  - Use `GlassGroupBoxStyle` for grouped content.
 - **Window Style:**
   - Use `WindowAccessor` to enable full transparency.
   - Use custom `SidebarView` (not NavigationSplitView) for collapsing behavior.
@@ -21,6 +25,7 @@
 - **Layout:**
   - Floating content panels with shadows and corner radius (16px via `AppTheme`).
   - Ample whitespace (16px/24px via `AppTheme`).
+  - Use `AppTheme.pagePadding` (30pt) for main content areas.
 
 ## 3. Architecture & Tech Stack
 **REFERENCE:** See `docs/ARCHITECTURE.md` for full architecture details.
@@ -67,4 +72,5 @@ Resources/       # Assets, Strings, Plists
     - Create/Modify `Model` (if needed).
     - Update `ViewModel` with new logic/properties.
     - Implement `View` changes using "Glass" design principles.
+    - **Reuse components:** Check `Sources/DesignSystem` before creating new styles.
 4.  **Verify:** Ensure Swift 6 compliance and no UI regressions.

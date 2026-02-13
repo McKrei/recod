@@ -11,6 +11,7 @@ enum AppTheme {
     // MARK: - Layout
     
     static let padding: CGFloat = 16
+    static let pagePadding: CGFloat = 30
     static let cornerRadius: CGFloat = 16
     static let smallCornerRadius: CGFloat = 8
     static let spacing: CGFloat = 12

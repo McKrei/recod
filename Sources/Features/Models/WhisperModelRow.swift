@@ -47,12 +47,9 @@ struct WhisperModelRow: View {
                 
                 // Action
                 actionSection
-                    .frame(width: 60, alignment: .trailing)
+                    .frame(width: 60, alignment: .center)
             }
-            .padding(.vertical, 10)
-            .padding(.horizontal, 12)
-            .background(isSelected ? Color.accentColor.opacity(0.1) : (isHovering ? Color.primary.opacity(0.05) : Color.clear))
-            .contentShape(Rectangle())
+            .glassRowStyle(isSelected: isSelected, isHovering: isHovering)
         }
         .buttonStyle(.plain)
         .onHover { isHovering = $0 }
@@ -63,22 +60,9 @@ struct WhisperModelRow: View {
             if model.isDownloading {
                 downloadingView
             } else if model.isDownloaded {
-                if !isSelected && isHovering {
-                     Button(role: .destructive, action: onDelete) {
-                        Image(systemName: "trash")
-                            .font(.system(size: 14))
-                            .foregroundStyle(.secondary)
-                    }
-                    .buttonStyle(.plain)
-                    .transition(.opacity)
-                }
+                DeleteIconButton(action: onDelete)
             } else {
-                Button(action: onDownload) {
-                    Image(systemName: "icloud.and.arrow.down")
-                        .font(.system(size: 16))
-                        .foregroundStyle(Color.accentColor)
-                }
-                .buttonStyle(.plain)
+                DownloadIconButton(action: onDownload)
             }
         }
     }
@@ -89,12 +73,7 @@ struct WhisperModelRow: View {
                 .progressViewStyle(.circular)
                 .controlSize(.mini)
             
-            Button(action: onCancel) {
-                Image(systemName: "xmark")
-                    .font(.system(size: 10))
-                    .foregroundStyle(.secondary)
-            }
-            .buttonStyle(.plain)
+            CancelIconButton(action: onCancel)
         }
     }
 }

@@ -16,6 +16,7 @@ All styling constants are centrally located in `Sources/DesignSystem/AppTheme.sw
 
 ### Key Constants
 - **Padding**: `AppTheme.padding` (Standard 16pt)
+- **Page Padding**: `AppTheme.pagePadding` (30pt) for main content areas
 - **Corner Radius**: `AppTheme.cornerRadius` (Standard 16pt)
 - **Glass Material**: `AppTheme.glassMaterial` (Use for all container backgrounds)
 - **Shadows**: Use `AppTheme.shadowColor`, `radius`, and `y` for consistent depth.
@@ -24,7 +25,28 @@ All styling constants are centrally located in `Sources/DesignSystem/AppTheme.sw
 
 ## Components
 
-### 1. Glass Group Box
+### 1. Glass Row Style (Lists)
+Used for items in lists like History, Models, Files.
+**File**: `Sources/DesignSystem/GlassRowStyle.swift`
+
+Usage:
+```swift
+HStack {
+    // Content
+}
+.glassRowStyle(isSelected: Bool, isHovering: Bool)
+.onHover { isHovering = $0 }
+```
+
+### 2. Standard Action Buttons
+Consistent iconography and hover states for common actions.
+**File**: `Sources/DesignSystem/StandardButtons.swift`
+
+- `DeleteIconButton(action: ...)`: Trash icon, turns red on hover.
+- `DownloadIconButton(action: ...)`: Cloud download icon.
+- `CancelIconButton(action: ...)`: Small xmark.
+
+### 3. Glass Group Box
 Used for grouping settings or content sections.
 **File**: `Sources/DesignSystem/GlassGroupBoxStyle.swift`
 
