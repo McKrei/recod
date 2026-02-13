@@ -7,6 +7,7 @@
 *   **Menu Bar App**: Runs in the background (LSUIElement), accessible via a menu bar icon.
 *   **Global Hotkey**: Toggle recording instantly with `Cmd+Shift+R`.
 *   **Visual Feedback**: Floating "Dynamic Island" style overlay with live waveform visualization.
+*   **Reactive History**: New recordings appear instantly in the history list without refresh.
 *   **Audio Capture**: Uses `AVAudioRecorder` to capture high-quality AAC audio.
 *   **Privacy First**: Local processing and explicit permission handling.
 

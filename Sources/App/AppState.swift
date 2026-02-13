@@ -7,14 +7,18 @@
 
 import SwiftUI
 import Combine
+import SwiftData
+import AVFoundation
 
 @MainActor
 class AppState: ObservableObject {
     static let shared = AppState()
 
-    @Published public var audioLevel: Float = 0.0
     @Published public var isRecording = false
     @Published public var isOverlayVisible = false
+    
+    // Injected by App
+    public var modelContext: ModelContext?
 
     private let audioRecorder = AudioRecorder()
     private var cancellables = Set<AnyCancellable>()
@@ -35,11 +39,6 @@ class AppState: ObservableObject {
                     self?.isOverlayVisible = false
                 }
             }
-            .store(in: &cancellables)
-            
-        audioRecorder.$audioLevel
-            .receive(on: RunLoop.main)
-            .assign(to: \.audioLevel, on: self)
             .store(in: &cancellables)
     }
 
@@ -73,8 +72,42 @@ class AppState: ObservableObject {
 
     func stopRecording() {
         Task {
-            _ = await audioRecorder.stopRecording()
-            self.isOverlayVisible = false
+            if let url = await audioRecorder.stopRecording() {
+                self.isOverlayVisible = false
+                await saveRecording(url: url)
+            } else {
+                self.isOverlayVisible = false
+            }
+        }
+    }
+    
+    private func saveRecording(url: URL) async {
+        guard let modelContext = modelContext else {
+            await FileLogger.shared.log("ModelContext not set in AppState", level: .error)
+            return
+        }
+        
+        do {
+            let asset = AVURLAsset(url: url)
+            let duration = try await asset.load(.duration).seconds
+            let filename = url.lastPathComponent
+            
+            // Get creation date from file attributes
+            let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
+            let creationDate = attributes[.creationDate] as? Date ?? Date()
+            
+            let recording = Recording(
+                createdAt: creationDate,
+                duration: duration,
+                filename: filename
+            )
+            
+            modelContext.insert(recording)
+            try modelContext.save()
+            
+            await FileLogger.shared.log("Saved new recording: \(filename)")
+        } catch {
+            await FileLogger.shared.log("Failed to save recording metadata: \(error)", level: .error)
         }
     }
 

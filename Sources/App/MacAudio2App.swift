@@ -120,6 +120,9 @@ struct MacAudio2App: App {
         
         let container = modelContainer
         Task { @MainActor in
+            // Inject ModelContext into AppState for reactive updates
+            AppState.shared.modelContext = container.mainContext
+            
             await RecordingSyncService().syncRecordings(modelContext: container.mainContext)
         }
     }
