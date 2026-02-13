@@ -12,20 +12,23 @@ import SwiftData
 
 enum SettingsSelection: Hashable, Identifiable, CaseIterable {
     case general
+    case models
     case history
-
+    
     var id: Self { self }
-
+    
     var title: String {
         switch self {
         case .general: return "General"
+        case .models: return "Models"
         case .history: return "History"
         }
     }
-
+    
     var icon: String {
         switch self {
         case .general: return "gear"
+        case .models: return "cpu"
         case .history: return "clock"
         }
     }
@@ -55,6 +58,8 @@ struct SettingsView: View {
                     switch selection {
                     case .general:
                         GeneralSettingsView()
+                    case .models:
+                        ModelsSettingsView()
                     case .history:
                         HistoryView()
                     }

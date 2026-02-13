@@ -19,6 +19,9 @@ class AppState: ObservableObject {
     
     // Injected by App
     public var modelContext: ModelContext?
+    
+    // Shared Services
+    public let whisperModelManager = WhisperModelManager()
 
     private let audioRecorder = AudioRecorder()
     private var cancellables = Set<AnyCancellable>()
