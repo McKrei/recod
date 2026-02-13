@@ -87,3 +87,7 @@ Resources/       # Assets, Strings, Plists
 - **Model Management:**
   - `WhisperModelManager` handles downloading/deleting models via WhisperKit's built-in downloader.
   - Models are stored in `~/Library/Application Support/MacAudio2/Models/models/argmaxinc/whisperkit-coreml`.
+
+## 9. Audio Recording Format
+- Recording uses `AVAudioEngine` with a tap that converts audio to **16kHz mono WAV**.
+- This ensures WhisperKit receives consistent PCM data and avoids empty/invalid frames.

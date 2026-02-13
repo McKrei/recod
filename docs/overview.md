@@ -8,7 +8,7 @@
 *   **Global Hotkey**: Toggle recording instantly with `Cmd+Shift+R`.
 *   **Visual Feedback**: Minimalist floating indicator with pulsating recording status.
 *   **Reactive History**: New recordings appear instantly in the history list without refresh.
-*   **Audio Capture**: Uses `AVAudioRecorder` to capture high-quality AAC audio.
+*   **Audio Capture**: Uses `AVAudioEngine` with on-the-fly conversion to 16kHz mono WAV.
 *   **Privacy First**: Local processing and explicit permission handling.
 
 ## 2. Tech Stack
@@ -16,7 +16,7 @@
 *   **Language**: Swift 6 (Strict Concurrency).
 *   **UI Framework**: SwiftUI (100%).
 *   **Architecture**: MVVM (Model-View-ViewModel) + AppState (ObservableObject singleton).
-*   **Audio**: AVFoundation (`AVAudioRecorder`).
+*   **Audio**: AVFoundation (`AVAudioEngine`).
 *   **System Integration**: Carbon (Global Hotkeys), AppKit (Window Management).
 *   **Build System**: Swift Package Manager (Executable Target).
 

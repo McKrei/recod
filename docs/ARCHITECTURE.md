@@ -26,8 +26,14 @@ The app uses SwiftData for persisting recordings.
 - **Reactivity**: When a recording finishes, `AppState` creates a `Recording` object and inserts it into the context. The `HistoryView` (observing via `@Query`) updates instantly.
 
 ## Audio Engine
-Audio recording and playback are handled by the `AudioPlayer` and `AudioRecorder` (or `AppState`) classes.
-- These are injected as `@Environment` objects or `@StateObject` depending on the scope.
+Audio recording and playback are handled by `AudioPlayer` and `AudioRecorder`.
+- Recording uses `AVAudioEngine` with a tap that converts incoming audio to **16kHz mono WAV** for WhisperKit.
+- Playback uses `AudioPlayer` and is injected via `@Environment`.
+
+## Transcription Engine
+Transcription is handled by `TranscriptionService` backed by **WhisperKit** (CoreML/ANE).
+- Two-pass pipeline: **detectLanguage** → **transcribe (task: .transcribe)** to avoid unintended translation.
+- Models are downloaded and managed via `WhisperModelManager` (WhisperKit downloader).
 
 ## The "Glass" Window Trick
 To achieve the "Superwhisper" look (deep transparency):
