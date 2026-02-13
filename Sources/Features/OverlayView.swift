@@ -10,69 +10,32 @@ import SwiftUI
 struct OverlayView: View {
     @ObservedObject var appState: AppState // Receive real app state
     @State private var isAnimating = false
-    
-    private var currentAudioLevel: Float {
-        appState.audioLevel
-    }
 
     var body: some View {
-        HStack(spacing: 12) {
-            Image(systemName: "mic.circle.fill")
-                .font(.largeTitle)
-                .symbolEffect(.pulse.byLayer, options: .repeating, isActive: isAnimating)
-                .foregroundStyle(.red, .primary)
+        ZStack {
+            Circle()
+                .fill(.ultraThinMaterial)
+                .frame(width: 56, height: 56)
+                .overlay(
+                    Circle()
+                        .strokeBorder(.white.opacity(0.2), lineWidth: 1)
+                )
+                .shadow(color: .black.opacity(0.2), radius: 10, x: 0, y: 5)
 
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Listening")
-                    .font(.headline)
-                Text("MacAudio2")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
+            Circle()
+                .stroke(.red.opacity(0.6), lineWidth: 2)
+                .frame(width: 20, height: 20)
+                .scaleEffect(isAnimating ? 2.2 : 1.0)
+                .opacity(isAnimating ? 0 : 1)
+                .animation(.easeOut(duration: 1.5).repeatForever(autoreverses: false), value: isAnimating)
 
-            Spacer()
-            
-            HStack(spacing: 3) {
-                ForEach(0..<8) { index in
-                    RoundedRectangle(cornerRadius: 2)
-                        .fill(.primary.opacity(0.6))
-                        .frame(width: 4, height: 16)
-                        .modifier(WaveformEffect(index: index, audioLevel: appState.audioLevel, isAnimating: isAnimating))
-                }
-            }
-            .frame(height: 30)
+            Image(systemName: "mic.fill")
+                .font(.system(size: 20))
+                .foregroundStyle(.red)
         }
-        .padding(.horizontal, 20)
-        .padding(.vertical, 12)
-        .frame(width: 300)
-        .background(.ultraThinMaterial, in: Capsule())
-        .overlay(
-            Capsule()
-                .strokeBorder(.white.opacity(0.2), lineWidth: 1)
-        )
-        .shadow(color: .black.opacity(0.2), radius: 10, x: 0, y: 5)
         .onAppear {
             isAnimating = true
         }
-    }
-}
-
-struct WaveformEffect: ViewModifier {
-    let index: Int
-    let audioLevel: Float
-    let isAnimating: Bool
-    
-    func body(content: Content) -> some View {
-        let baseHeight: CGFloat = 8.0
-        let maxHeight: CGFloat = 24.0
-        
-        let variation = CGFloat((index % 3) + 1) * 2.0
-        
-        let targetHeight = baseHeight + (CGFloat(audioLevel) * (maxHeight - baseHeight)) + (isAnimating && audioLevel > 0.01 ? variation : 0)
-        
-        return content
-            .frame(height: targetHeight)
-            .animation(.easeInOut(duration: 0.1), value: targetHeight)
     }
 }
 

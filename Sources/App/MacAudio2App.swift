@@ -140,6 +140,11 @@ struct MacAudio2App: App {
                 .environmentObject(appState)
                 .environment(audioPlayer)
                 .modelContainer(modelContainer)
+                .background(WindowAccessor { window in
+                    // Ensure settings window stays on top of other windows (including the overlay)
+                    window.level = .floating
+                    window.makeKeyAndOrderFront(nil)
+                })
                 .onAppear {
                     NSApp.activate(ignoringOtherApps: true)
                 }

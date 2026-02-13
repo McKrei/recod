@@ -20,7 +20,6 @@ public class AudioRecorder: NSObject, ObservableObject, @unchecked Sendable {
     private var audioFile: AVAudioFile?
 
     @Published public var isRecording = false
-    @Published public var audioLevel: Float = 0.0
 
     // Config
     private let bufferSize: UInt32 = 1024
@@ -68,11 +67,6 @@ public class AudioRecorder: NSObject, ObservableObject, @unchecked Sendable {
             } catch {
                 print("Error writing to file: \(error)")
             }
-            
-            let level = self.calculateLevel(buffer: buffer)
-            Task { @MainActor in
-                self.audioLevel = level
-            }
         }
 
         do {
@@ -99,24 +93,12 @@ public class AudioRecorder: NSObject, ObservableObject, @unchecked Sendable {
 
         await MainActor.run {
             self.isRecording = false
-            self.audioLevel = 0
         }
         self.audioEngine = nil
 
         Log("Stopped recording")
 
         return url
-    }
-
-    private func calculateLevel(buffer: AVAudioPCMBuffer) -> Float {
-        guard let channelData = buffer.floatChannelData?[0] else { return 0 }
-        let frameLength = UInt32(buffer.frameLength)
-        var sum: Float = 0
-        for i in 0..<Int(frameLength) {
-            sum += channelData[i] * channelData[i]
-        }
-        let rms = sqrt(sum / Float(frameLength))
-        return rms
     }
 
     nonisolated public func audioRecorderDidFinishRecording(_ recorder: AVAudioRecorder, successfully flag: Bool) {
