@@ -11,13 +11,17 @@ struct OverlayView: View {
     @ObservedObject var appState: AppState // Receive real app state
     @State private var isAnimating = false
     
+    private var currentAudioLevel: Float {
+        appState.audioLevel
+    }
+
     var body: some View {
         HStack(spacing: 12) {
             Image(systemName: "mic.circle.fill")
                 .font(.largeTitle)
                 .symbolEffect(.pulse.byLayer, options: .repeating, isActive: isAnimating)
                 .foregroundStyle(.red, .primary)
-            
+
             VStack(alignment: .leading, spacing: 2) {
                 Text("Listening")
                     .font(.headline)
@@ -25,7 +29,7 @@ struct OverlayView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
-            
+
             Spacer()
             
             HStack(spacing: 3) {
@@ -59,15 +63,11 @@ struct WaveformEffect: ViewModifier {
     let isAnimating: Bool
     
     func body(content: Content) -> some View {
-        // Simple visualizer: height depends on audioLevel + some random jitter
-        // We use .animation to smooth out updates
         let baseHeight: CGFloat = 8.0
         let maxHeight: CGFloat = 24.0
         
-        // Pseudo-random variation based on index so bars don't look identical
         let variation = CGFloat((index % 3) + 1) * 2.0
         
-        // Calculate target height
         let targetHeight = baseHeight + (CGFloat(audioLevel) * (maxHeight - baseHeight)) + (isAnimating && audioLevel > 0.01 ? variation : 0)
         
         return content

@@ -15,14 +15,16 @@ public enum AudioRecorderError: Error {
 }
 
 /// Actor managing audio recording state and file handling.
-@MainActor
-public class AudioRecorder: NSObject, ObservableObject, AVAudioRecorderDelegate {
-    private var audioRecorder: AVAudioRecorder?
+public class AudioRecorder: NSObject, ObservableObject, @unchecked Sendable {
+    private var audioEngine: AVAudioEngine?
+    private var audioFile: AVAudioFile?
+
     @Published public var isRecording = false
     @Published public var audioLevel: Float = 0.0
-    
-    private var meteringTimer: Timer?
-    
+
+    // Config
+    private let bufferSize: UInt32 = 1024
+
     public func requestPermission() async -> Bool {
         if #available(macOS 14.0, *) {
             return await AVCaptureDevice.requestAccess(for: .audio)
@@ -34,126 +36,114 @@ public class AudioRecorder: NSObject, ObservableObject, AVAudioRecorderDelegate 
              }
         }
     }
-    
+
     public func startRecording() async throws {
         let granted = await requestPermission()
         guard granted else {
             throw AudioRecorderError.permissionDenied
         }
-        
+
+        let engine = AVAudioEngine()
+        let inputNode = engine.inputNode
+        let format = inputNode.outputFormat(forBus: 0)
+
+        // Setup file for writing
         let fileURL = getNewRecordingURL()
-        
-        let settings: [String: Any] = [
-            AVFormatIDKey: Int(kAudioFormatMPEG4AAC),
-            AVSampleRateKey: 12000,
-            AVNumberOfChannelsKey: 1,
-            AVEncoderAudioQualityKey: AVAudioQuality.high.rawValue
-        ]
-        
         do {
-            let recorder = try AVAudioRecorder(url: fileURL, settings: settings)
-            recorder.delegate = self
-            recorder.isMeteringEnabled = true
-            
-            guard recorder.record() else {
-                throw AudioRecorderError.recordingFailed
+            audioFile = try AVAudioFile(forWriting: fileURL, settings: format.settings)
+            Log("Created audio file at: \(fileURL.path)")
+        } catch {
+            Log("Failed to create audio file: \(error)", level: .error)
+            throw AudioRecorderError.setupFailed
+        }
+
+        // Install tap on input node
+        // NOTE: We use a smaller buffer size for smoother UI updates, but installTap might enforce its own size
+        inputNode.installTap(onBus: 0, bufferSize: bufferSize, format: format) { [weak self] buffer, time in
+            guard let self = self else { return }
+
+            // 1. Write to file
+            do {
+                try self.audioFile?.write(from: buffer)
+            } catch {
+                print("Error writing to file: \(error)")
             }
             
-            self.audioRecorder = recorder
-            self.isRecording = true
-            startMetering()
-            await FileLogger.shared.log("Started recording to \(fileURL.lastPathComponent)")
+            let level = self.calculateLevel(buffer: buffer)
+            Task { @MainActor in
+                self.audioLevel = level
+            }
+        }
+
+        do {
+            try engine.start()
+            self.audioEngine = engine
+            await MainActor.run {
+                self.isRecording = true
+            }
+            Log("Started audio engine")
         } catch {
-            await FileLogger.shared.log("Failed to start recording: \(error)", level: .error)
+            Log("Failed to start audio engine: \(error)", level: .error)
             throw AudioRecorderError.setupFailed
         }
     }
-    
+
     public func stopRecording() async -> URL? {
-        stopMetering()
-        guard let recorder = audioRecorder, isRecording else { return nil }
-        
-        recorder.stop()
-        self.isRecording = false
-        self.audioRecorder = nil
-        await FileLogger.shared.log("Stopped recording")
-        
-        return recorder.url
-    }
-    
-    nonisolated public func audioRecorderDidFinishRecording(_ recorder: AVAudioRecorder, successfully flag: Bool) {
-        Task { @MainActor in
-            if flag {
-                await FileLogger.shared.log("Finished recording successfully: \(recorder.url.lastPathComponent)")
-            } else {
-                await FileLogger.shared.log("Recording finished with error", level: .error)
-            }
-            // self.isRecording = false // Already handled in stopRecording if stopped manually, but if stopped by system?
-            // If stopped by system (e.g. disk full), we need to update state.
-            // Check if we are still marked as recording?
-            // Actually, audioRecorderDidFinishRecording is called AFTER stop() too.
-            // If we called stop(), we set isRecording = false.
-            // If system stopped it, isRecording might be true.
-            if self.isRecording {
-                self.isRecording = false
-                self.audioRecorder = nil
-            }
+        guard let engine = audioEngine, isRecording else { return nil }
+
+        engine.inputNode.removeTap(onBus: 0)
+        engine.stop()
+
+        let url = audioFile?.url
+        audioFile = nil // Close file
+
+        await MainActor.run {
+            self.isRecording = false
+            self.audioLevel = 0
         }
+        self.audioEngine = nil
+
+        Log("Stopped recording")
+
+        return url
     }
-    
+
+    private func calculateLevel(buffer: AVAudioPCMBuffer) -> Float {
+        guard let channelData = buffer.floatChannelData?[0] else { return 0 }
+        let frameLength = UInt32(buffer.frameLength)
+        var sum: Float = 0
+        for i in 0..<Int(frameLength) {
+            sum += channelData[i] * channelData[i]
+        }
+        let rms = sqrt(sum / Float(frameLength))
+        return rms
+    }
+
+    nonisolated public func audioRecorderDidFinishRecording(_ recorder: AVAudioRecorder, successfully flag: Bool) {
+       // Deprecated delegate method
+    }
+
     private func getNewRecordingURL() -> URL {
         let fileManager = FileManager.default
         let appSupportURL = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
         let recordingsDir = appSupportURL.appendingPathComponent("MacAudio2/Recordings")
-        
+
         try? fileManager.createDirectory(at: recordingsDir, withIntermediateDirectories: true)
-        
+
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyyMMdd-HHmmss"
         let dateString = formatter.string(from: Date())
-        
+
         return recordingsDir.appendingPathComponent("recording-\(dateString).m4a")
     }
-    
+
     /// Reveals the recordings folder in Finder
+    @MainActor
     public func revealRecordingsInFinder() {
         let fileManager = FileManager.default
         if let appSupportURL = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first {
              let recordingsDir = appSupportURL.appendingPathComponent("MacAudio2/Recordings")
              NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: recordingsDir.path)
-        }
-    }
-    
-    private func startMetering() {
-        meteringTimer?.invalidate()
-        meteringTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
-            Task { @MainActor [weak self] in
-                self?.updateAudioLevel()
-            }
-        }
-    }
-    
-    private func stopMetering() {
-        meteringTimer?.invalidate()
-        meteringTimer = nil
-        audioLevel = 0.0
-    }
-    
-    private func updateAudioLevel() {
-        guard let recorder = audioRecorder, recorder.isRecording else { return }
-        recorder.updateMeters()
-        
-        // Normalize power from -160..0 dB to 0..1
-        let power = recorder.averagePower(forChannel: 0)
-        let minDb: Float = -60.0
-        
-        if power < minDb {
-            audioLevel = 0.0
-        } else if power >= 0.0 {
-            audioLevel = 1.0
-        } else {
-            // Linearize
-            audioLevel = (power - minDb) / (0.0 - minDb)
         }
     }
 }

@@ -1,0 +1,164 @@
+import SwiftUI
+import SwiftData
+
+struct HistoryView: View {
+    @Environment(\.modelContext) private var modelContext
+    @Environment(AudioPlayer.self) private var audioPlayer
+    @Query(sort: \Recording.createdAt, order: .reverse) private var recordings: [Recording]
+
+    var body: some View {
+        VStack(spacing: 0) {
+            if recordings.isEmpty {
+                ContentUnavailableView(
+                    "No Recordings",
+                    systemImage: "mic.slash",
+                    description: Text("Your recording history will appear here.")
+                )
+            } else {
+                ScrollView {
+                    LazyVStack(spacing: AppTheme.spacing) {
+                        ForEach(recordings) { recording in
+                            HistoryRowView(recording: recording, audioPlayer: audioPlayer) {
+                                deleteRecording(recording)
+                            }
+                        }
+                    }
+                    .padding(AppTheme.padding)
+                }
+                .scrollContentBackground(.hidden)
+            }
+        }
+        .frame(minWidth: 400, minHeight: 500)
+        .background(Color.clear)
+    }
+    
+    private func deleteRecordings(offsets: IndexSet) {
+        withAnimation {
+            for index in offsets {
+                deleteRecording(recordings[index])
+            }
+        }
+    }
+    
+    private func deleteRecording(_ recording: Recording) {
+        if audioPlayer.currentRecordingID == recording.id {
+            audioPlayer.stop()
+        }
+        
+        try? FileManager.default.removeItem(at: recording.fileURL)
+        modelContext.delete(recording)
+    }
+}
+
+struct HistoryRowView: View {
+    let recording: Recording
+    let audioPlayer: AudioPlayer
+    let onDelete: () -> Void
+    
+    @State private var isHovering = false
+    
+    private var isCurrentPlaying: Bool {
+        audioPlayer.currentRecordingID == recording.id && audioPlayer.isPlaying
+    }
+    
+    var body: some View {
+        HStack(spacing: AppTheme.spacing) {
+            playPauseButton
+            
+            VStack(alignment: .leading, spacing: 4) {
+                HStack {
+                    Text(recording.createdAt.formatted(date: .abbreviated, time: .shortened))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    
+                    Spacer()
+                    
+                    Text(formatDuration(recording.duration))
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(.tertiary)
+                }
+                
+                Group {
+                    if let transcription = recording.transcription, !transcription.isEmpty {
+                        Text(transcription)
+                            .foregroundStyle(.primary)
+                    } else {
+                        Text("No transcription")
+                            .italic()
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .font(.subheadline)
+                .lineLimit(2)
+            }
+            
+            deleteButton
+        }
+        .padding(AppTheme.padding)
+        .background(AppTheme.glassMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: AppTheme.cornerRadius))
+        .shadow(color: AppTheme.shadowColor, radius: AppTheme.shadowRadius, x: 0, y: AppTheme.shadowY)
+        .overlay(
+            RoundedRectangle(cornerRadius: AppTheme.cornerRadius)
+                .stroke(Color.white.opacity(isHovering ? 0.2 : 0), lineWidth: 1)
+        )
+        .onHover { isHovering = $0 }
+        .contextMenu {
+            Button(role: .destructive, action: onDelete) {
+                Label("Delete", systemImage: "trash")
+            }
+        }
+    }
+    
+    private var deleteButton: some View {
+        Button(role: .destructive, action: onDelete) {
+            Image(systemName: "trash")
+                .font(.system(size: 14))
+                .foregroundStyle(isHovering ? Color.red : Color.secondary)
+                .opacity(isHovering ? 1.0 : 0.6)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .padding(.leading, 8)
+    }
+    
+    private var playPauseButton: some View {
+        Button {
+            audioPlayer.togglePlay(url: recording.fileURL, recordingID: recording.id)
+        } label: {
+            Image(systemName: isCurrentPlaying ? "pause.circle.fill" : "play.circle.fill")
+                .font(.system(size: 26))
+                .foregroundStyle(isCurrentPlaying ? Color.accentColor : .secondary)
+                .contentTransition(.symbolEffect(.replace))
+        }
+        .buttonStyle(.plain)
+    }
+    
+    private func formatDuration(_ duration: TimeInterval) -> String {
+        let formatter = DateComponentsFormatter()
+        formatter.allowedUnits = [.minute, .second]
+        formatter.unitsStyle = .positional
+        formatter.zeroFormattingBehavior = .pad
+        return formatter.string(from: duration) ?? "00:00"
+    }
+}
+
+#Preview {
+    let config = ModelConfiguration(isStoredInMemoryOnly: true)
+    let container = try! ModelContainer(for: Recording.self, configurations: config)
+    
+    let samples = [
+        Recording(createdAt: .now, duration: 125, transcription: "Hello world, this is a test recording.", filename: "rec1.m4a"),
+        Recording(createdAt: .now.addingTimeInterval(-3600), duration: 45, transcription: nil, filename: "rec2.m4a"),
+        Recording(createdAt: .now.addingTimeInterval(-86400), duration: 320, transcription: "Long meeting notes about the project status.", filename: "rec3.m4a")
+    ]
+    
+    for sample in samples {
+        container.mainContext.insert(sample)
+    }
+    
+    return HistoryView()
+        .modelContainer(container)
+        .environment(AudioPlayer())
+        .frame(width: 500, height: 600)
+}

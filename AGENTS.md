@@ -8,19 +8,23 @@
 - **Style:** "Tahoe" / Modern Glass (Translucency, Vibrancy, Floating Windows).
 
 ## 2. Design Philosophy ("The Tahoe Look")
-- **Materials over Colors:** Use `Material` (ultraThin, thin, thick) instead of solid background colors wherever possible to achieve the glass effect.
+**REFERENCE:** See `docs/DESIGN_SYSTEM.md` for explicit constants and guides.
+
+- **Central Theme:** All styling (padding, radii, materials) MUST come from `AppTheme` struct.
+  - **NO HARDCODED VALUES.**
+- **Materials over Colors:** Use `AppTheme.glassMaterial` instead of solid background colors.
 - **Window Style:**
-  - Use `.windowStyle(.hiddenTitleBar)` for a unified look.
-  - Use `NavigationSplitView` for sidebar-driven navigation.
-  - Sidebar should use `.background(.ultraThinMaterial)` or system default vibrancy.
-- **Typography:** SF Pro, strictly following Apple's dynamic type styles (LargeTitle, Title, Headline, etc.).
-- **Iconography:** SF Symbols 6. Use generic symbols where possible.
+  - Use `WindowAccessor` to enable full transparency.
+  - Use custom `SidebarView` (not NavigationSplitView) for collapsing behavior.
+- **Typography:** SF Pro.
+- **Iconography:** SF Symbols 6.
 - **Layout:**
-  - Floating content panels with shadows and corner radius (12-16px).
-  - ample whitespace (padding).
-  - Interactions should have hover effects (`.onHover`, `.buttonStyle(.plain)` with custom hover modifiers).
+  - Floating content panels with shadows and corner radius (16px via `AppTheme`).
+  - Ample whitespace (16px/24px via `AppTheme`).
 
 ## 3. Architecture & Tech Stack
+**REFERENCE:** See `docs/ARCHITECTURE.md` for full architecture details.
+
 - **Framework:** SwiftUI (100% preferred). Use AppKit *only* when SwiftUI lacks specific capability (wrap in `NSViewRepresentable`).
 - **Pattern:** MVVM (Model-View-ViewModel).
   - **View:** Declarative UI, purely driven by state.

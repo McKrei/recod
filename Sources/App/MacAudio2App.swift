@@ -8,6 +8,7 @@
 import SwiftUI
 import AppKit
 import Combine
+import SwiftData
 
 @MainActor
 class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
@@ -75,40 +76,72 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     }
 }
 
+struct MenuBarContent: View {
+    @ObservedObject var appState: AppState
+    @Environment(\.openWindow) var openWindow
+
+    var body: some View {
+        Button(appState.isRecording ? "Stop Recording" : "Start Recording") {
+            appState.toggleRecording()
+        }
+        .keyboardShortcut("R")
+        
+        Divider()
+        
+        Button("Settings...") {
+            openWindow(id: "settings")
+            NSApp.activate(ignoringOtherApps: true)
+        }
+        .keyboardShortcut(",", modifiers: .command)
+        
+        Divider()
+        
+        Button("Quit") {
+            NSApplication.shared.terminate(nil)
+        }
+        .keyboardShortcut("Q")
+    }
+}
+
 @main
 struct MacAudio2App: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @StateObject private var appState = AppState.shared
+    @State private var audioPlayer = AudioPlayer()
+    
+    let modelContainer: ModelContainer
+    
+    init() {
+        do {
+            modelContainer = try ModelContainer(for: Recording.self)
+        } catch {
+            fatalError("Could not initialize ModelContainer: \(error)")
+        }
+        
+        let container = modelContainer
+        Task { @MainActor in
+            await RecordingSyncService().syncRecordings(modelContext: container.mainContext)
+        }
+    }
     
     var body: some Scene {
         MenuBarExtra("MacAudio2", systemImage: appState.isRecording ? "record.circle.fill" : "mic.circle") {
-            Button(appState.isRecording ? "Stop Recording" : "Start Recording") {
-                appState.toggleRecording()
-            }
-            .keyboardShortcut("R")
-            
-            Divider()
-            
-            SettingsLink {
-                Text("Settings...")
-            }
-            .keyboardShortcut(",", modifiers: .command)
-            
-            Divider()
-            
-            Button("Quit") {
-                NSApplication.shared.terminate(nil)
-            }
-            .keyboardShortcut("Q")
+            MenuBarContent(appState: appState)
+                .modelContainer(modelContainer)
+                .environment(audioPlayer)
         }
         .menuBarExtraStyle(.menu)
         
-        Settings {
+        WindowGroup(id: "settings") {
             SettingsView()
                 .environmentObject(appState)
+                .environment(audioPlayer)
+                .modelContainer(modelContainer)
                 .onAppear {
-                    appDelegate.showSettings()
+                    NSApp.activate(ignoringOtherApps: true)
                 }
         }
+        .windowStyle(.hiddenTitleBar)
+        .windowResizability(.contentSize)
     }
 }
