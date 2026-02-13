@@ -17,6 +17,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     
     func applicationDidFinishLaunching(_ notification: Notification) {
         setupOverlayWindow()
+        setupSignalHandlers()
         
         // Observe AppState
         Task { @MainActor in
@@ -30,6 +31,23 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
                 }
                 .store(in: &cancellables)
         }
+    }
+    
+    private func setupSignalHandlers() {
+        let sigintSource = DispatchSource.makeSignalSource(signal: SIGINT, queue: .main)
+        sigintSource.setEventHandler {
+            NSApplication.shared.terminate(nil)
+        }
+        sigintSource.resume()
+        
+        let sigtermSource = DispatchSource.makeSignalSource(signal: SIGTERM, queue: .main)
+        sigtermSource.setEventHandler {
+            NSApplication.shared.terminate(nil)
+        }
+        sigtermSource.resume()
+        
+        signal(SIGINT, SIG_IGN)
+        signal(SIGTERM, SIG_IGN)
     }
     
     private func setupOverlayWindow() {
