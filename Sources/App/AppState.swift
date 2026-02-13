@@ -143,6 +143,11 @@ class AppState: ObservableObject {
                     overlayStatus = .success
                     await FileLogger.shared.log("Transcription completed for: \(filename)")
                     
+                    ClipboardService.shared.copyToClipboard(text)
+                    Task {
+                        ClipboardService.shared.pasteToActiveApp()
+                    }
+                    
                     try? await Task.sleep(nanoseconds: 1_500_000_000)
                     self.isOverlayVisible = false
                 } catch {

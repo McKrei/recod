@@ -56,14 +56,17 @@ struct HistoryRowView: View {
     let onDelete: () -> Void
     
     @State private var isHovering = false
+    @State private var isExpanded = false
+    @State private var showCopyFeedback = false
     
     private var isCurrentPlaying: Bool {
         audioPlayer.currentRecordingID == recording.id && audioPlayer.isPlaying
     }
     
     var body: some View {
-        HStack(spacing: AppTheme.spacing) {
+        HStack(alignment: isExpanded ? .top : .center, spacing: AppTheme.spacing) {
             playPauseButton
+                .padding(.top, isExpanded ? 4 : 0)
             
             VStack(alignment: .leading, spacing: 4) {
                 HStack {
@@ -91,6 +94,13 @@ struct HistoryRowView: View {
                         if let transcription = recording.transcription, !transcription.isEmpty {
                             Text(transcription)
                                 .foregroundStyle(.primary)
+                                .lineLimit(isExpanded ? nil : 2)
+                                .contentShape(Rectangle())
+                                .onTapGesture {
+                                    withAnimation(.spring(duration: 0.3)) {
+                                        isExpanded.toggle()
+                                    }
+                                }
                         } else {
                             Text("Empty transcription")
                                 .italic()
@@ -110,14 +120,47 @@ struct HistoryRowView: View {
                     }
                 }
                 .font(.subheadline)
-                .lineLimit(2)
             }
             
-            deleteButton
+            VStack(spacing: 8) {
+                if let transcription = recording.transcription, !transcription.isEmpty {
+                    Button {
+                        ClipboardService.shared.copyToClipboard(transcription)
+                        withAnimation {
+                            showCopyFeedback = true
+                        }
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                            withAnimation {
+                                showCopyFeedback = false
+                            }
+                        }
+                    } label: {
+                        Image(systemName: showCopyFeedback ? "checkmark" : "doc.on.doc")
+                            .font(.system(size: 14))
+                            .foregroundStyle(showCopyFeedback ? .green : .secondary)
+                            .frame(width: 24, height: 24)
+                            .background(Color.white.opacity(0.1))
+                            .clipShape(RoundedRectangle(cornerRadius: 6))
+                    }
+                    .buttonStyle(.plain)
+                    .help("Copy Transcription")
+                }
+                
+                DeleteIconButton(action: onDelete)
+            }
+            .padding(.top, isExpanded ? 4 : 0)
         }
         .glassRowStyle(isHovering: isHovering)
         .onHover { isHovering = $0 }
         .contextMenu {
+            if let transcription = recording.transcription {
+                Button {
+                    ClipboardService.shared.copyToClipboard(transcription)
+                } label: {
+                    Label("Copy Transcription", systemImage: "doc.on.doc")
+                }
+            }
+            
             Button(role: .destructive, action: onDelete) {
                 Label("Delete", systemImage: "trash")
             }
