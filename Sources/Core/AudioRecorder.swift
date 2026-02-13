@@ -1,11 +1,4 @@
-//
-//  AudioRecorder.swift
-//  MacAudio2
-//
-//  Created for OpenCode.
-//
-
-import AVFoundation
+@preconcurrency import AVFoundation
 import AppKit
 
 public enum AudioRecorderError: Error {
@@ -14,72 +7,86 @@ public enum AudioRecorderError: Error {
     case recordingFailed
 }
 
-/// Actor managing audio recording state and file handling.
 public class AudioRecorder: NSObject, ObservableObject, @unchecked Sendable {
     private var audioEngine: AVAudioEngine?
     private var audioFile: AVAudioFile?
+    private var tapInstalled = false
 
     @Published public var isRecording = false
 
-    // Config
-    private let bufferSize: UInt32 = 1024
-
     public func requestPermission() async -> Bool {
-        if #available(macOS 14.0, *) {
-            return await AVCaptureDevice.requestAccess(for: .audio)
-        } else {
-             return await withCheckedContinuation { continuation in
-                 AVCaptureDevice.requestAccess(for: .audio) { granted in
-                     continuation.resume(returning: granted)
-                 }
-             }
+        let status = AVCaptureDevice.authorizationStatus(for: .audio)
+        switch status {
+        case .authorized: return true
+        case .notDetermined: return await AVCaptureDevice.requestAccess(for: .audio)
+        default: return false
         }
     }
 
     public func startRecording() async throws {
         let granted = await requestPermission()
-        guard granted else {
-            throw AudioRecorderError.permissionDenied
-        }
+        guard granted else { throw AudioRecorderError.permissionDenied }
 
         let engine = AVAudioEngine()
         let inputNode = engine.inputNode
-        let format = inputNode.outputFormat(forBus: 0)
-
-        // Setup file for writing
+        
+        let recordingFormat = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 16000, channels: 1, interleaved: false)!
+        
         let fileURL = getNewRecordingURL()
+        
+        let settings: [String: Any] = [
+            AVFormatIDKey: Int(kAudioFormatLinearPCM),
+            AVSampleRateKey: 16000.0,
+            AVNumberOfChannelsKey: 1,
+            AVLinearPCMBitDepthKey: 16,
+            AVLinearPCMIsBigEndianKey: false,
+            AVLinearPCMIsFloatKey: false
+        ]
+
         do {
-            audioFile = try AVAudioFile(forWriting: fileURL, settings: format.settings)
-            Log("Created audio file at: \(fileURL.path)")
+            audioFile = try AVAudioFile(forWriting: fileURL, settings: settings)
+            Log("Created 16kHz WAV file: \(fileURL.path)")
         } catch {
             Log("Failed to create audio file: \(error)", level: .error)
             throw AudioRecorderError.setupFailed
         }
 
-        // Install tap on input node
-        // NOTE: We use a smaller buffer size for smoother UI updates, but installTap might enforce its own size
-        inputNode.installTap(onBus: 0, bufferSize: bufferSize, format: format) { [weak self] buffer, time in
-            guard let self = self else { return }
+        inputNode.installTap(onBus: 0, bufferSize: 4096, format: inputNode.outputFormat(forBus: 0)) { [weak self] buffer, time in
+            guard let self = self, let audioFile = self.audioFile else { return }
+            
+            let converter = AVAudioConverter(from: buffer.format, to: recordingFormat)!
+            let convertedBuffer = AVAudioPCMBuffer(pcmFormat: recordingFormat, frameCapacity: AVAudioFrameCount(Double(buffer.frameLength) * (recordingFormat.sampleRate / buffer.format.sampleRate)) + 100)!
+            
+            var error: NSError?
+            let inputBlock: AVAudioConverterInputBlock = { inNumPackets, outStatus in
+                outStatus.pointee = .haveData
+                return buffer
+            }
+            
+            converter.convert(to: convertedBuffer, error: &error, withInputFrom: inputBlock)
+            
+            if let error = error {
+                Log("Conversion error: \(error)", level: .error)
+                return
+            }
 
-            // 1. Write to file
             do {
-                try self.audioFile?.write(from: buffer)
+                try audioFile.write(from: convertedBuffer)
             } catch {
-                print("Error writing to file: \(error)")
+                Log("Write error: \(error)", level: .error)
             }
         }
-
-        engine.prepare() // Pre-allocate resources to reduce start latency
         
+        tapInstalled = true
+
         do {
+            engine.prepare()
             try engine.start()
             self.audioEngine = engine
-            await MainActor.run {
-                self.isRecording = true
-            }
-            Log("Started audio engine")
+            await MainActor.run { self.isRecording = true }
+            Log("Recording started at 16kHz")
         } catch {
-            Log("Failed to start audio engine: \(error)", level: .error)
+            Log("Engine start failed: \(error)", level: .error)
             throw AudioRecorderError.setupFailed
         }
     }
@@ -87,45 +94,34 @@ public class AudioRecorder: NSObject, ObservableObject, @unchecked Sendable {
     public func stopRecording() async -> URL? {
         guard let engine = audioEngine, isRecording else { return nil }
 
-        // Delay stopping to capture the tail end of the audio buffer
-        // This prevents the "cut off at the end" issue where the last few milliseconds are lost
-        try? await Task.sleep(nanoseconds: 500 * 1_000_000) // 0.5s
+        try? await Task.sleep(nanoseconds: 500_000_000)
 
-        engine.inputNode.removeTap(onBus: 0)
-        engine.stop()
-
-        let url = audioFile?.url
-        audioFile = nil // Close file
-
-        await MainActor.run {
-            self.isRecording = false
+        if tapInstalled {
+            engine.inputNode.removeTap(onBus: 0)
+            tapInstalled = false
         }
+        
+        engine.stop()
+        let url = audioFile?.url
+        audioFile = nil
+        
+        await MainActor.run { self.isRecording = false }
         self.audioEngine = nil
-
-        Log("Stopped recording")
-
+        Log("Recording stopped and file closed")
         return url
-    }
-
-    nonisolated public func audioRecorderDidFinishRecording(_ recorder: AVAudioRecorder, successfully flag: Bool) {
-       // Deprecated delegate method
     }
 
     private func getNewRecordingURL() -> URL {
         let fileManager = FileManager.default
         let appSupportURL = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
         let recordingsDir = appSupportURL.appendingPathComponent("MacAudio2/Recordings")
-
         try? fileManager.createDirectory(at: recordingsDir, withIntermediateDirectories: true)
-
+        
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyyMMdd-HHmmss"
-        let dateString = formatter.string(from: Date())
-
-        return recordingsDir.appendingPathComponent("recording-\(dateString).m4a")
+        return recordingsDir.appendingPathComponent("recording-\(formatter.string(from: Date())).wav")
     }
 
-    /// Reveals the recordings folder in Finder
     @MainActor
     public func revealRecordingsInFinder() {
         let fileManager = FileManager.default

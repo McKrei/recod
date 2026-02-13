@@ -20,7 +20,7 @@ final class TranscriptionService {
         let start = Date()
         
         do {
-            whisperKit = try await WhisperKit(modelFolder: modelURL.path)
+            whisperKit = try await WhisperKit(modelFolder: modelURL.path(percentEncoded: false))
             currentModelURL = modelURL
             
             let duration = Date().timeIntervalSince(start)
@@ -44,20 +44,17 @@ final class TranscriptionService {
             throw NSError(domain: "TranscriptionService", code: -1, userInfo: [NSLocalizedDescriptionKey: "WhisperKit not initialized"])
         }
         
+        let frameCount = try await waitForFileReady(url: audioURL)
+        await FileLogger.shared.log("Audio file verified and ready (\(frameCount) frames)")
+        
         await FileLogger.shared.log("Starting WhisperKit inference...")
         let inferStart = Date()
         
-        // 1. Detect language first using the path
-        var detectedLang = "en"
-        // detectLanguage returns (language: String, langProbs: [String: Float])
         let detectionResult = try await kit.detectLanguage(audioPath: audioURL.path)
-        
-        // Use the top detected language
-        detectedLang = detectionResult.language
+        let detectedLang = detectionResult.language
         let prob = detectionResult.langProbs[detectedLang] ?? 0.0
         await FileLogger.shared.log("Detected language: \(detectedLang) (prob: \(prob))")
         
-        // 2. Force transcription with the detected language
         var options = DecodingOptions()
         options.task = .transcribe
         options.language = detectedLang 
@@ -75,6 +72,27 @@ final class TranscriptionService {
         await FileLogger.shared.log("--- Transcription End ---")
         
         return text
+    }
+    
+    private func waitForFileReady(url: URL) async throws -> AVAudioFramePosition {
+        var lastError: Error?
+        
+        for i in 0..<12 {
+            do {
+                let file = try AVAudioFile(forReading: url)
+                let length = file.length
+                if length > 0 {
+                    return length
+                }
+            } catch {
+                lastError = error
+            }
+
+            try? await Task.sleep(nanoseconds: 100_000_000 * UInt64(i + 1))
+        }
+        
+        await FileLogger.shared.log("Audio file is empty after verification.", level: .error)
+        throw lastError ?? NSError(domain: "TranscriptionService", code: -1, userInfo: [NSLocalizedDescriptionKey: "Audio samples are empty"])
     }
     
     func clearCache() {
