@@ -69,6 +69,8 @@ public class AudioRecorder: NSObject, ObservableObject, @unchecked Sendable {
             }
         }
 
+        engine.prepare() // Pre-allocate resources to reduce start latency
+        
         do {
             try engine.start()
             self.audioEngine = engine
@@ -84,6 +86,10 @@ public class AudioRecorder: NSObject, ObservableObject, @unchecked Sendable {
 
     public func stopRecording() async -> URL? {
         guard let engine = audioEngine, isRecording else { return nil }
+
+        // Delay stopping to capture the tail end of the audio buffer
+        // This prevents the "cut off at the end" issue where the last few milliseconds are lost
+        try? await Task.sleep(nanoseconds: 500 * 1_000_000) // 0.5s
 
         engine.inputNode.removeTap(onBus: 0)
         engine.stop()

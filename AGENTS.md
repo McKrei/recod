@@ -74,3 +74,9 @@ Resources/       # Assets, Strings, Plists
     - Implement `View` changes using "Glass" design principles.
     - **Reuse components:** Check `Sources/DesignSystem` before creating new styles.
 4.  **Verify:** Ensure Swift 6 compliance and no UI regressions.
+
+## 7. Critical Behaviors & Latency Handling
+- **Audio Recording:**
+  - **Start:** `AudioRecorder` uses `engine.prepare()` before starting to pre-warm hardware.
+  - **Stop:** `stopRecording()` includes a **0.5s delay** before stopping the engine to capture the "tail" of speech (preventing cut-off).
+  - **UI UX:** The `OverlayView` implements a **fake loading state (0.5s)** when recording starts. This forces the user to wait slightly before speaking, ensuring the audio engine is fully stable and AGC is active. **DO NOT REMOVE THIS DELAY.**
