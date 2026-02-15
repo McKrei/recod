@@ -120,4 +120,18 @@ Resources/       # Assets, Strings, Plists
   - Temporarily switches `NSApp.setActivationPolicy(.regular)` — this makes the app a "normal" app that can receive keyboard events.
   - Calls `NSApp.activate(ignoringOtherApps: true)` and makes the window key.
   - After recording finishes or is cancelled, restores `NSApp.setActivationPolicy(.accessory)`.
-  - **This pattern must be used whenever keyboard input capture is needed.**
+   - **This pattern must be used whenever keyboard input capture is needed.**
+
+## 12. Release Strategy & Sparkle Integration
+- **Framework:** Sparkle 2 (SPM dependency).
+- **Update Mechanism:**
+  - `UpdaterManager` (`@Observable`) wraps `SPUStandardUpdaterController`.
+  - Sparkle is **only initialized** when running as a `.app` bundle to prevent crashes during debug (`make run`).
+- **CI/CD:** GitHub Actions (`.github/workflows/release.yml`).
+  - Triggered by `make release` (pushes git tag).
+  - Automatically builds `.app`, signs with EdDSA key, zips, generates `appcast.xml`, and publishes to GitHub Releases.
+- **Versioning:** `MAJOR.MINOR` (e.g., 1.01, 1.02).
+  - Minor version auto-increments via Makefile.
+  - Major version manual trigger: `make release MAJOR=2`.
+- **Artifacts:**
+  - `Recod.app` must contain `Contents/Frameworks/Sparkle.framework` and have `@rpath` set correctly (handled by `make app` / CI).
