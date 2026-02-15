@@ -160,7 +160,8 @@ struct RecodApp: App {
                 .modelContainer(modelContainer)
                 .environment(audioPlayer)
         } label: {
-            let config = NSImage.SymbolConfiguration(pointSize: 22, weight: .regular)
+            // Change pointSize value to adjust icon size (e.g. 20)
+            let config = NSImage.SymbolConfiguration(pointSize: 20, weight: .regular)
             let image = NSImage(
                 systemSymbolName: appState.isRecording ? "record.circle.fill" : "mic.circle",
                 accessibilityDescription: nil
