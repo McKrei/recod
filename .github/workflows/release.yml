@@ -1,0 +1,117 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    name: Build & Release
+    runs-on: macos-15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Extract version from tag
+        id: version
+        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> $GITHUB_OUTPUT
+
+      - name: Build release binary
+        run: swift build -c release
+
+      - name: Create .app bundle
+        run: |
+          APP_NAME="Recod"
+          APP_BUNDLE="build/${APP_NAME}.app"
+          BIN_PATH=$(swift build -c release --show-bin-path)
+
+          mkdir -p "${APP_BUNDLE}/Contents/MacOS"
+          mkdir -p "${APP_BUNDLE}/Contents/Resources"
+
+          cp "${BIN_PATH}/${APP_NAME}" "${APP_BUNDLE}/Contents/MacOS/${APP_NAME}"
+
+          sed -e 's/$(DEVELOPMENT_LANGUAGE)/en/g' \
+              -e 's/$(PRODUCT_BUNDLE_PACKAGE_TYPE)/APPL/g' \
+              -e 's/$(MACOSX_DEPLOYMENT_TARGET)/15.0/g' \
+              -e "s/1.0/${{ steps.version.outputs.VERSION }}/g" \
+              Info.plist > "${APP_BUNDLE}/Contents/Info.plist"
+
+      - name: Create ZIP archive
+        run: |
+          cd build
+          ditto -c -k --sequesterRsrc --keepParent Recod.app Recod.zip
+
+      - name: Sign with Sparkle EdDSA key
+        env:
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+        run: |
+          # Resolve Sparkle tools from SPM build
+          SPARKLE_TOOLS=$(find .build -path "*/artifacts/sparkle/Sparkle/bin" -type d | head -1)
+
+          if [ -z "$SPARKLE_TOOLS" ]; then
+            echo "Sparkle tools not found, fetching..."
+            swift package resolve
+            SPARKLE_TOOLS=$(find .build -path "*/artifacts/sparkle/Sparkle/bin" -type d | head -1)
+          fi
+
+          echo "Sparkle tools: $SPARKLE_TOOLS"
+
+          # Sign the ZIP and capture signature info
+          SIGN_OUTPUT=$(echo "$SPARKLE_PRIVATE_KEY" | "${SPARKLE_TOOLS}/sign_update" build/Recod.zip -f -)
+          echo "Signature output: $SIGN_OUTPUT"
+          echo "SIGN_OUTPUT=$SIGN_OUTPUT" >> $GITHUB_ENV
+
+      - name: Generate appcast.xml
+        env:
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+        run: |
+          SPARKLE_TOOLS=$(find .build -path "*/artifacts/sparkle/Sparkle/bin" -type d | head -1)
+          VERSION="${{ steps.version.outputs.VERSION }}"
+          TAG="${GITHUB_REF_NAME}"
+
+          # Get file size and signature
+          FILE_SIZE=$(stat -f%z build/Recod.zip)
+          ED_SIGNATURE=$(echo "$SIGN_OUTPUT" | grep -o 'sparkle:edSignature="[^"]*"' | cut -d'"' -f2)
+          LENGTH=$(echo "$SIGN_OUTPUT" | grep -o 'length="[^"]*"' | cut -d'"' -f2)
+
+          DOWNLOAD_URL="https://github.com/${{ github.repository }}/releases/download/${TAG}/Recod.zip"
+
+          cat > build/appcast.xml << EOF
+          <?xml version="1.0" encoding="utf-8"?>
+          <rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" xmlns:dc="http://purl.org/dc/elements/1.1/">
+            <channel>
+              <title>Recod Updates</title>
+              <language>en</language>
+              <item>
+                <title>Version ${VERSION}</title>
+                <sparkle:version>${VERSION}</sparkle:version>
+                <sparkle:shortVersionString>${VERSION}</sparkle:shortVersionString>
+                <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
+                <enclosure
+                  url="${DOWNLOAD_URL}"
+                  ${SIGN_OUTPUT}
+                  type="application/octet-stream" />
+              </item>
+            </channel>
+          </rss>
+          EOF
+
+          # Remove leading whitespace from XML
+          sed -i '' 's/^          //' build/appcast.xml
+
+          echo "=== appcast.xml ==="
+          cat build/appcast.xml
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "Recod v${{ steps.version.outputs.VERSION }}"
+          body: "Release v${{ steps.version.outputs.VERSION }}"
+          files: |
+            build/Recod.zip
+            build/appcast.xml

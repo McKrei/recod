@@ -1,4 +1,4 @@
-.PHONY: build run clean app dmg
+.PHONY: build run clean app dmg release
 
 APP_NAME = Recod
 BUILD_DIR = build
@@ -65,3 +65,14 @@ reset: kill
 	rm -rf "/Users/evgeniisergunin/Library/Application Support/recod/Models"
 	rm -rf "/Users/evgeniisergunin/Library/Application Support/recod/Logs"
 	@echo "All models and logs have been cleared."
+
+# Tag and push a new release (triggers GitHub Actions CI/CD)
+# Usage: make release VERSION=1.1
+release:
+ifndef VERSION
+	$(error VERSION is required. Usage: make release VERSION=1.1)
+endif
+	@echo "Releasing v$(VERSION)..."
+	@git tag -a "v$(VERSION)" -m "Release v$(VERSION)"
+	@git push origin "v$(VERSION)"
+	@echo "✅ Tag v$(VERSION) pushed! GitHub Actions will build and publish the release."

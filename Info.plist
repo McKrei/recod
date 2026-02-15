@@ -24,5 +24,9 @@
 	<true/>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>We need access to your microphone to record audio for transcription.</string>
+	<key>SUFeedURL</key>
+	<string>https://github.com/OWNER/recod/releases/latest/download/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>REPLACE_WITH_PUBLIC_KEY</string>
 </dict>
 </plist>

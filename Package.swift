@@ -15,13 +15,15 @@ let package = Package(
         )
     ],
     dependencies: [
-        .package(url: "https://github.com/argmaxinc/WhisperKit.git", from: "0.9.0")
+        .package(url: "https://github.com/argmaxinc/WhisperKit.git", from: "0.9.0"),
+        .package(url: "https://github.com/sparkle-project/Sparkle.git", from: "2.0.0")
     ],
     targets: [
         .executableTarget(
             name: "Recod",
             dependencies: [
-                .product(name: "WhisperKit", package: "WhisperKit")
+                .product(name: "WhisperKit", package: "WhisperKit"),
+                .product(name: "Sparkle", package: "Sparkle")
             ],
             path: "Sources",
             exclude: [],

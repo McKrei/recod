@@ -96,6 +96,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
 
 struct MenuBarContent: View {
     @ObservedObject var appState: AppState
+    @ObservedObject var updaterManager: UpdaterManager
     @Environment(\.openWindow) var openWindow
 
     var body: some View {
@@ -105,6 +106,11 @@ struct MenuBarContent: View {
         .keyboardShortcut("R")
 
         Divider()
+
+        Button("Check for Updates...") {
+            updaterManager.checkForUpdates()
+        }
+        .disabled(!updaterManager.canCheckForUpdates)
 
         Button("Settings...") {
             openWindow(id: "settings")
@@ -125,6 +131,7 @@ struct MenuBarContent: View {
 struct RecodApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @StateObject private var appState = AppState.shared
+    @StateObject private var updaterManager = UpdaterManager()
     @State private var audioPlayer = AudioPlayer()
 
     let modelContainer: ModelContainer
@@ -147,7 +154,7 @@ struct RecodApp: App {
 
     var body: some Scene {
         MenuBarExtra("Recod", systemImage: appState.isRecording ? "record.circle.fill" : "mic.circle") {
-            MenuBarContent(appState: appState)
+            MenuBarContent(appState: appState, updaterManager: updaterManager)
                 .modelContainer(modelContainer)
                 .environment(audioPlayer)
         }
