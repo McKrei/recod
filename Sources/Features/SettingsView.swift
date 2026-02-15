@@ -14,9 +14,9 @@ enum SettingsSelection: Hashable, Identifiable, CaseIterable {
     case general
     case models
     case history
-    
+
     var id: Self { self }
-    
+
     var title: String {
         switch self {
         case .general: return "General"
@@ -24,7 +24,7 @@ enum SettingsSelection: Hashable, Identifiable, CaseIterable {
         case .history: return "History"
         }
     }
-    
+
     var icon: String {
         switch self {
         case .general: return "gear"
@@ -39,19 +39,19 @@ enum SettingsSelection: Hashable, Identifiable, CaseIterable {
 struct SettingsView: View {
     @State private var selection: SettingsSelection? = .general
     @State private var isExpanded: Bool = false
-    
+
     var body: some View {
         HStack(spacing: 0) {
             // Sidebar
             SidebarView(selection: $selection, isExpanded: $isExpanded)
                 .zIndex(1)
-            
+
             // Divider
             Rectangle()
                 .fill(Color.primary.opacity(0.2))
                 .frame(width: 1)
                 .ignoresSafeArea()
-            
+
             // Content
             ZStack {
                 if let selection {
@@ -75,18 +75,18 @@ struct SettingsView: View {
             // Clear the window background to allow pure custom material
             window.isOpaque = false
             window.backgroundColor = .clear
-            
+
             // Hide title bar but keep buttons
             window.titleVisibility = .hidden
             window.titlebarAppearsTransparent = true
             window.styleMask.insert(.fullSizeContentView)
-            
+
             // Enable dragging by background
             window.isMovableByWindowBackground = true
-            
+
             // Ensure shadow
             window.hasShadow = true
-            
+
             // Window Buttons: Hide Zoom (Green), keep others
             window.standardWindowButton(.zoomButton)?.isHidden = true
             window.standardWindowButton(.miniaturizeButton)?.isHidden = false
@@ -100,12 +100,12 @@ struct SettingsView: View {
 struct SidebarView: View {
     @Binding var selection: SettingsSelection?
     @Binding var isExpanded: Bool
-    
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             // Top spacing for traffic lights (approx 28pt standard)
             Color.clear.frame(height: AppTheme.sidebarTopSpacing)
-            
+
             // Toggle Button (Moved to top)
             Button {
                 withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) {
@@ -122,7 +122,7 @@ struct SidebarView: View {
             .frame(maxWidth: .infinity, alignment: isExpanded ? .leading : .center)
             .padding(.leading, isExpanded ? 16 : 0)
             .padding(.bottom, AppTheme.sidebarButtonBottomSpacing)
-            
+
             // Navigation Items
             ScrollView(.vertical, showsIndicators: false) {
                 VStack(spacing: 4) {
@@ -138,7 +138,7 @@ struct SidebarView: View {
                 }
                 .padding(.horizontal, 10)
             }
-            
+
             Spacer()
         }
         .frame(width: isExpanded ? AppTheme.sidebarWidthExpanded : AppTheme.sidebarWidthCollapsed)
@@ -151,7 +151,7 @@ struct SidebarItem: View {
     let isSelected: Bool
     let isExpanded: Bool
     let action: () -> Void
-    
+
     var body: some View {
         Button(action: action) {
             HStack(spacing: 12) {
@@ -159,7 +159,7 @@ struct SidebarItem: View {
                     .font(.system(size: 18, weight: .regular))
                     .frame(width: 24, height: 24)
                     .foregroundStyle(isSelected ? .primary : .secondary)
-                
+
                 if isExpanded {
                     Text(item.title)
                         .font(.system(size: 14, weight: .medium))
@@ -186,7 +186,7 @@ struct SidebarItem: View {
 
 struct GeneralSettingsView: View {
     @EnvironmentObject var appState: AppState
-    
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
@@ -195,9 +195,9 @@ struct GeneralSettingsView: View {
                         Label("Storage & Debugging", systemImage: "externaldrive")
                             .font(.headline)
                             .foregroundStyle(.primary)
-                        
+
                         Divider()
-                        
+
                         HStack {
                             VStack(alignment: .leading) {
                                 Text("Recordings")
@@ -211,7 +211,7 @@ struct GeneralSettingsView: View {
                                 appState.revealRecordings()
                             }
                         }
-                        
+
                         HStack {
                             VStack(alignment: .leading) {
                                 Text("Logs")
@@ -229,23 +229,19 @@ struct GeneralSettingsView: View {
                     .padding(8)
                 }
                 .groupBoxStyle(GlassGroupBoxStyle())
-                
+
                 GroupBox {
                     VStack(alignment: .leading, spacing: 16) {
                         Label("Shortcuts", systemImage: "keyboard")
                             .font(.headline)
                             .foregroundStyle(.primary)
-                        
+
                         Divider()
-                        
+
                         HStack {
                             Text("Toggle Recording")
                             Spacer()
-                            HStack(spacing: 4) {
-                                KeyView(symbol: "⌘")
-                                KeyView(symbol: "⇧")
-                                KeyView(text: "R")
-                            }
+                            HotKeyRecorderView()
                         }
                     }
                     .padding(8)
@@ -260,7 +256,7 @@ struct GeneralSettingsView: View {
 struct KeyView: View {
     var symbol: String?
     var text: String?
-    
+
     var body: some View {
         Text(symbol ?? text ?? "")
             .font(.system(size: 13, weight: .semibold))

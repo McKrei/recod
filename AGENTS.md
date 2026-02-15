@@ -91,3 +91,33 @@ Resources/       # Assets, Strings, Plists
 ## 9. Audio Recording Format
 - Recording uses `AVAudioEngine` with a tap that converts audio to **16kHz mono WAV**.
 - This ensures WhisperKit receives consistent PCM data and avoids empty/invalid frames.
+
+## 10. Global Hotkeys System
+- **Engine:** Carbon API (`RegisterEventHotKey`/`UnregisterEventHotKey`). This is the only way to register truly global hotkeys on macOS.
+- **Architecture:**
+  - `HotKeyShortcut` — `Codable`/`Sendable` struct storing `keyCode` (UInt32, Carbon virtual key) and `modifiers` (UInt32, Carbon modifier flags: `cmdKey`, `shiftKey`, `optionKey`, `controlKey`).
+  - `HotKeyManager` — singleton (`@MainActor`, `ObservableObject`) managing registration, unregistration, and persistence via `UserDefaults`.
+  - `HotKeyRecorderView` — SwiftUI component for interactive shortcut capture using `NSEvent.addLocalMonitorForEvents`.
+- **Default Shortcut:** `⌘⇧R` (Cmd+Shift+R).
+- **Persistence:** Shortcuts are saved to `UserDefaults` as JSON-encoded `HotKeyShortcut`.
+- **Key Mapping:** `HotKeyShortcut.keyName(for:)` maps Carbon `kVK_*` codes to human-readable strings. Supports A-Z, 0-9, F1-F12, Space, arrows, punctuation.
+- **Validation:** At least one modifier is required for non-F-key shortcuts. F-keys can be registered standalone.
+
+## 11. Window Focus & Activation Policy (CRITICAL)
+> **This is the #1 source of bugs in this project. Read carefully.**
+
+- The app is a **MenuBar-only app** (`MenuBarExtra`), which means macOS sets its activation policy to `.accessory` by default.
+- `.accessory` apps **cannot receive keyboard focus** — keyboard events go to the app behind.
+- **Overlay window** (`AppDelegate.setupOverlayWindow`):
+  - Uses `NSWindow` with `styleMask: [.borderless, .nonactivatingPanel]` and `level: .floating`.
+  - This is **correct** — overlay must float above everything and NOT steal focus from the active app.
+  - **Never add `.titled` or remove `.nonactivatingPanel`** from the overlay window.
+- **Settings window** (`WindowGroup(id: "settings")`):
+  - **Must NOT use `window.level = .floating`** — this prevents normal focus behavior.
+  - Uses `WindowAccessor` only for cosmetic configuration (transparency, title bar, shadow).
+  - Activation via `NSApp.activate(ignoringOtherApps: true)` in `.onAppear`.
+- **Hotkey Recorder focus workaround** (`HotKeyRecorderView.startRecording`):
+  - Temporarily switches `NSApp.setActivationPolicy(.regular)` — this makes the app a "normal" app that can receive keyboard events.
+  - Calls `NSApp.activate(ignoringOtherApps: true)` and makes the window key.
+  - After recording finishes or is cancelled, restores `NSApp.setActivationPolicy(.accessory)`.
+  - **This pattern must be used whenever keyboard input capture is needed.**
