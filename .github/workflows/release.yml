@@ -42,6 +42,7 @@ jobs:
               -e 's/$(PRODUCT_BUNDLE_PACKAGE_TYPE)/APPL/g' \
               -e 's/$(MACOSX_DEPLOYMENT_TARGET)/15.0/g' \
               -e "s/1.0/${{ steps.version.outputs.VERSION }}/g" \
+              -e "s/>1</>${{ steps.version.outputs.VERSION }}</g" \
               Info.plist > "${APP_BUNDLE}/Contents/Info.plist"
 
       - name: Create ZIP archive
