@@ -16,14 +16,17 @@ final class Recording {
     var transcription: String?
     var transcriptionStatus: TranscriptionStatus?
     var filename: String
-    
+    var isFileDeleted: Bool = false
+
+
     init(
         id: UUID = UUID(),
         createdAt: Date = .now,
         duration: TimeInterval = 0,
         transcription: String? = nil,
         transcriptionStatus: TranscriptionStatus? = .pending,
-        filename: String
+        filename: String,
+        isFileDeleted: Bool = false
     ) {
         self.id = id
         self.createdAt = createdAt
@@ -31,8 +34,10 @@ final class Recording {
         self.transcription = transcription
         self.transcriptionStatus = transcriptionStatus
         self.filename = filename
+        self.isFileDeleted = isFileDeleted
     }
-    
+
+
     @Transient
     var fileURL: URL {
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!

@@ -137,6 +137,8 @@ struct RecodApp: App {
     let modelContainer: ModelContainer
 
     init() {
+        Self.backupDatabase()
+
         do {
             modelContainer = try ModelContainer(for: Recording.self)
         } catch {
@@ -174,5 +176,35 @@ struct RecodApp: App {
         }
         .windowStyle(.hiddenTitleBar)
         .windowResizability(.contentSize)
+    }
+
+    /// Creates a backup of the default.store file if it exists.
+    /// This is a safety measure before SwiftData performs any migrations.
+    private static func backupDatabase() {
+        let fileManager = FileManager.default
+        guard let appSupportURL = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else { return }
+
+        let storeURL = appSupportURL.appendingPathComponent("default.store")
+        let shmURL = appSupportURL.appendingPathComponent("default.store-shm")
+        let walURL = appSupportURL.appendingPathComponent("default.store-wal")
+
+        let backupExtension = ".bak"
+
+        let filesToBackup = [storeURL, shmURL, walURL]
+
+        for url in filesToBackup {
+            if fileManager.fileExists(atPath: url.path) {
+                let backupURL = url.appendingPathExtension(backupExtension)
+                do {
+                    if fileManager.fileExists(atPath: backupURL.path) {
+                        try fileManager.removeItem(at: backupURL)
+                    }
+                    try fileManager.copyItem(at: url, to: backupURL)
+                    print("Backed up \(url.lastPathComponent) to \(backupURL.lastPathComponent)")
+                } catch {
+                    print("Failed to backup \(url.lastPathComponent): \(error)")
+                }
+            }
+        }
     }
 }
