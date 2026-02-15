@@ -69,13 +69,51 @@ reset: kill
 	rm -rf "/Users/evgeniisergunin/Library/Application Support/recod/Logs"
 	@echo "All models and logs have been cleared."
 
-# Tag and push a new release (triggers GitHub Actions CI/CD)
-# Usage: make release VERSION=1.1
+# Show current and next version
+version:
+	@LATEST=$$(git tag -l 'v*' --sort=-v:refname | head -1); \
+	if [ -z "$$LATEST" ]; then \
+		echo "Текущая версия: нет тегов"; \
+		echo "Следующая версия: 1.01"; \
+	else \
+		echo "Текущая версия: $$LATEST"; \
+		MAJOR=$$(echo "$$LATEST" | sed 's/v//' | cut -d. -f1); \
+		MINOR=$$(echo "$$LATEST" | sed 's/v//' | cut -d. -f2 | sed 's/^0*//'); \
+		MINOR=$${MINOR:-0}; \
+		NEXT_MINOR=$$((MINOR + 1)); \
+		if [ $$NEXT_MINOR -lt 10 ]; then \
+			echo "Следующая версия: v$$MAJOR.0$$NEXT_MINOR"; \
+		else \
+			echo "Следующая версия: v$$MAJOR.$$NEXT_MINOR"; \
+		fi; \
+	fi
+
+# Create a new release with auto-incremented version
+# Usage:
+#   make release              — auto-increment minor (1.01 → 1.02)
+#   make release MAJOR=2      — start new major version (2.01)
 release:
-ifndef VERSION
-	$(error VERSION is required. Usage: make release VERSION=1.1)
-endif
-	@echo "Releasing v$(VERSION)..."
-	@git tag -a "v$(VERSION)" -m "Release v$(VERSION)"
-	@git push origin "v$(VERSION)"
-	@echo "✅ Tag v$(VERSION) pushed! GitHub Actions will build and publish the release."
+	@LATEST=$$(git tag -l 'v*' --sort=-v:refname | head -1); \
+	if [ -n "$(MAJOR)" ]; then \
+		NEW_VERSION="$(MAJOR).01"; \
+	elif [ -z "$$LATEST" ]; then \
+		NEW_VERSION="1.01"; \
+	else \
+		MAJOR_NUM=$$(echo "$$LATEST" | sed 's/v//' | cut -d. -f1); \
+		MINOR_NUM=$$(echo "$$LATEST" | sed 's/v//' | cut -d. -f2 | sed 's/^0*//'); \
+		MINOR_NUM=$${MINOR_NUM:-0}; \
+		NEXT=$$((MINOR_NUM + 1)); \
+		if [ $$NEXT -gt 99 ]; then \
+			echo "⚠️  Minor version exceeded 99! Use: make release MAJOR=$$((MAJOR_NUM + 1))"; \
+			exit 1; \
+		fi; \
+		if [ $$NEXT -lt 10 ]; then \
+			NEW_VERSION="$$MAJOR_NUM.0$$NEXT"; \
+		else \
+			NEW_VERSION="$$MAJOR_NUM.$$NEXT"; \
+		fi; \
+	fi; \
+	echo "🚀 Releasing v$$NEW_VERSION..."; \
+	git tag -a "v$$NEW_VERSION" -m "Release v$$NEW_VERSION"; \
+	git push origin "v$$NEW_VERSION"; \
+	echo "✅ v$$NEW_VERSION released! GitHub Actions will build and publish."
