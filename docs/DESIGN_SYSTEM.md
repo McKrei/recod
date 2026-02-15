@@ -25,7 +25,23 @@ All styling constants are centrally located in `Sources/DesignSystem/AppTheme.sw
 
 ## Components
 
-### 1. Glass Row Style (Lists)
+### 1. Settings Header
+Standardized header for all settings pages. Includes title, subtitle, icon, and optional action button.
+**File**: `Sources/DesignSystem/SettingsHeaderView.swift`
+
+Usage:
+```swift
+SettingsHeaderView(
+    title: "Page Title",
+    subtitle: "Description",
+    systemImage: "gear"
+) {
+    // Optional Action Button
+    Button("Add") {}
+}
+```
+
+### 2. Glass Row Style (Lists)
 Used for items in lists like History, Models, Files.
 **File**: `Sources/DesignSystem/GlassRowStyle.swift`
 
@@ -37,14 +53,6 @@ HStack {
 .glassRowStyle(isSelected: Bool, isHovering: Bool)
 .onHover { isHovering = $0 }
 ```
-
-### 2. Standard Action Buttons
-Consistent iconography and hover states for common actions.
-**File**: `Sources/DesignSystem/StandardButtons.swift`
-
-- `DeleteIconButton(action: ...)`: Trash icon, turns red on hover.
-- `DownloadIconButton(action: ...)`: Cloud download icon.
-- `CancelIconButton(action: ...)`: Small xmark.
 
 ### 3. Glass Group Box
 Used for grouping settings or content sections.
@@ -58,8 +66,20 @@ GroupBox {
 .groupBoxStyle(GlassGroupBoxStyle())
 ```
 
-### 2. Sidebar Navigation
-The settings sidebar is a custom implementation (not `NavigationSplitView`) to support the "Icon Only" $\leftrightarrow$ "Icon + Text" animation.
+### 4. Standard Action Buttons
+Consistent iconography and hover states for common actions.
+**File**: `Sources/DesignSystem/StandardButtons.swift`
+
+- `DeleteIconButton(action: ...)`: Trash icon, turns red on hover.
+- `DownloadIconButton(action: ...)`: Cloud download icon.
+- `CancelIconButton(action: ...)`: Small xmark.
+
+---
+
+## Navigation
+
+### Sidebar Navigation
+The settings sidebar is a custom implementation to support the "Icon Only" $\leftrightarrow$ "Icon + Text" animation.
 
 **Adding a New Menu Item:**
 1.  Open `Sources/Features/SettingsView.swift`.
@@ -67,30 +87,12 @@ The settings sidebar is a custom implementation (not `NavigationSplitView`) to s
 3.  Define its `title` and `icon` properties.
 4.  Add the view case to the `body` switch statement in `SettingsView`.
 
-```swift
-enum SettingsSelection {
-    case general, history, newFeature // 1. Add case
-
-    var title: String {
-        switch self {
-            // ...
-            case .newFeature: return "New Feature" // 2. Add title
-        }
-    }
-}
-
-// In SettingsView body:
-case .newFeature:
-    NewFeatureView() // 3. Connect View
-```
-
 ---
 
 ## Window Styling
 The application uses a hidden title bar and a transparent window background to allow the `Material` effects to work correctly.
 
-**WindowAccessor**:
-Located in `Sources/Core/Utilities/WindowAccessor.swift`. This helper allows SwiftUI views to access the underlying `NSWindow`.
+**WindowAccessor**: `Sources/Core/Utilities/WindowAccessor.swift`
 
 **Standard Configuration:**
 ```swift
@@ -98,6 +100,6 @@ Located in `Sources/Core/Utilities/WindowAccessor.swift`. This helper allows Swi
     window.isOpaque = false
     window.backgroundColor = .clear
     window.titleVisibility = .hidden
-    window.isMovableByWindowBackground = true
+    // ...
 })
 ```

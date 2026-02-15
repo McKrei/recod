@@ -19,7 +19,7 @@ struct HistoryView: View {
                     onDeleteAll: { showDeleteAllAlert = true }
                 )
                 .padding(.horizontal, AppTheme.pagePadding)
-                .padding(.top, AppTheme.padding)
+                .padding(.top, AppTheme.pagePadding)
                 .padding(.bottom, AppTheme.spacing)
             }
 

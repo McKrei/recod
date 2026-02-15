@@ -24,10 +24,10 @@ class AppState: ObservableObject {
     @Published public var isRecording = false
     @Published public var isOverlayVisible = false
     @Published public var overlayStatus: OverlayStatus = .recording
-    
+
     // Injected by App
     public var modelContext: ModelContext?
-    
+
     // Shared Services
     public let whisperModelManager = WhisperModelManager()
 
@@ -74,7 +74,7 @@ class AppState: ObservableObject {
                     await TranscriptionService.shared.prepareModel(modelURL: modelURL)
                 }
             }
-            
+
             do {
                 overlayStatus = .recording
                 try await audioRecorder.startRecording()
@@ -101,62 +101,84 @@ class AppState: ObservableObject {
             }
         }
     }
-    
+
     private func saveRecording(url: URL) async {
         guard let modelContext = modelContext else {
             await FileLogger.shared.log("ModelContext not set in AppState", level: .error)
             self.isOverlayVisible = false
             return
         }
-        
+
         do {
             let asset = AVURLAsset(url: url)
             let duration = try await asset.load(.duration).seconds
             let filename = url.lastPathComponent
-            
+
             let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
             let creationDate = attributes[.creationDate] as? Date ?? Date()
-            
+
             let recording = Recording(
                 createdAt: creationDate,
                 duration: duration,
                 filename: filename
             )
-            
+
             modelContext.insert(recording)
             try modelContext.save()
-            
+
             await FileLogger.shared.log("Saved new recording: \(filename)")
-            
+
             if let modelId = whisperModelManager.selectedModelId,
                let modelURL = whisperModelManager.getModelURL(for: modelId) {
-                
+
                 recording.transcriptionStatus = .transcribing
                 try? modelContext.save()
-                
+
                 do {
-                    let text = try await TranscriptionService.shared.transcribe(audioURL: url, modelURL: modelURL)
-                    recording.transcription = text
+                    let rawText = try await TranscriptionService.shared.transcribe(audioURL: url, modelURL: modelURL)
+
+
+                    // Apply text replacements
+                    var finalText = rawText
+                    let descriptor = FetchDescriptor<ReplacementRule>()
+                    do {
+                        let rules = try modelContext.fetch(descriptor)
+                        if !rules.isEmpty {
+                            await FileLogger.shared.log("Applying \(rules.count) replacement rules...")
+                            let original = finalText
+                            finalText = TextReplacementService.applyReplacements(text: rawText, rules: rules)
+
+                            if original != finalText {
+                                await FileLogger.shared.log("Replacements applied. Text changed.")
+                            } else {
+                                await FileLogger.shared.log("Replacements applied but text remained unchanged.")
+                            }
+                        }
+                    } catch {
+                        await FileLogger.shared.log("Failed to fetch replacement rules: \(error)", level: .error)
+                    }
+
+                    recording.transcription = finalText
                     recording.transcriptionStatus = .completed
                     try modelContext.save()
-                    
+
                     overlayStatus = .success
                     await FileLogger.shared.log("Transcription completed for: \(filename)")
-                    
-                    ClipboardService.shared.copyToClipboard(text)
+
+                    ClipboardService.shared.copyToClipboard(finalText)
                     Task {
                         ClipboardService.shared.pasteToActiveApp()
                     }
-                    
+
                     try? await Task.sleep(nanoseconds: 1_500_000_000)
                     self.isOverlayVisible = false
                 } catch {
                     recording.transcriptionStatus = .failed
                     try? modelContext.save()
-                    
+
                     overlayStatus = .error
                     await FileLogger.shared.log("Transcription failed: \(error)", level: .error)
-                    
+
                     try? await Task.sleep(nanoseconds: 2_000_000_000)
                     self.isOverlayVisible = false
                 }
@@ -165,7 +187,7 @@ class AppState: ObservableObject {
                 try? modelContext.save()
                 self.isOverlayVisible = false
             }
-            
+
         } catch {
             await FileLogger.shared.log("Failed to save recording metadata: \(error)", level: .error)
             self.isOverlayVisible = false

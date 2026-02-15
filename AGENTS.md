@@ -135,3 +135,28 @@ Resources/       # Assets, Strings, Plists
   - Major version manual trigger: `make release MAJOR=2`.
 - **Artifacts:**
   - `Recod.app` must contain `Contents/Frameworks/Sparkle.framework` and have `@rpath` set correctly (handled by `make app` / CI).
+
+## 13. System Instructions: Creating New Pages
+**Always check `docs/DESIGN_SYSTEM.md` first.**
+
+When adding a new Settings Page or Feature View:
+
+1.  **Use `SettingsHeaderView`:**
+    - Do NOT create custom headers with `GroupBox`.
+    - Use standardization:
+      ```swift
+      SettingsHeaderView(
+          title: "Page Title",
+          subtitle: "Explanation...",
+          systemImage: "icon.name"
+      )
+      ```
+2.  **Use `AppTheme` Constants:**
+    - Spacing: `AppTheme.spacing` (12)
+    - Padding: `AppTheme.pagePadding` (30) for main containers.
+3.  **List Items:**
+    - Use `GlassRowStyle` for list items.
+    - Implement hover with `.onHover { isHovering = $0 }`.
+4.  **Buttons:**
+    - Use standard buttons from `Sources/DesignSystem/StandardButtons.swift` (`DeleteIconButton`, etc).
+    - For main actions, use `.bordered` style (gray), not `.borderedProminent` (blue), unless it is the primary call to action in a modal.
