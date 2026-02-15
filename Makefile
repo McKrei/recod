@@ -72,7 +72,7 @@ reset: kill
 
 # Show current and next version
 version:
-	@LATEST=$$(git tag -l 'v*' --sort=-v:refname | head -1); \
+	@LATEST=$$(git tag -l 'v*' --sort=-creatordate | head -1); \
 	if [ -z "$$LATEST" ]; then \
 		echo "Текущая версия: нет тегов"; \
 		echo "Следующая версия: 1.01"; \
@@ -94,7 +94,7 @@ version:
 #   make release              — auto-increment minor (1.01 → 1.02)
 #   make release MAJOR=2      — start new major version (2.01)
 release:
-	@LATEST=$$(git tag -l 'v*' --sort=-v:refname | head -1); \
+	@LATEST=$$(git tag -l 'v*' --sort=-creatordate | head -1); \
 	if [ -n "$(MAJOR)" ]; then \
 		NEW_VERSION="$(MAJOR).01"; \
 	elif [ -z "$$LATEST" ]; then \
