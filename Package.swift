@@ -4,14 +4,14 @@
 import PackageDescription
 
 let package = Package(
-    name: "MacAudio2",
+    name: "Recod",
     platforms: [
         .macOS(.v15)
     ],
     products: [
         .executable(
-            name: "MacAudio2",
-            targets: ["MacAudio2"]
+            name: "Recod",
+            targets: ["Recod"]
         )
     ],
     dependencies: [
@@ -19,7 +19,7 @@ let package = Package(
     ],
     targets: [
         .executableTarget(
-            name: "MacAudio2",
+            name: "Recod",
             dependencies: [
                 .product(name: "WhisperKit", package: "WhisperKit")
             ],

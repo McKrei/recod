@@ -36,7 +36,7 @@ final class Recording {
     @Transient
     var fileURL: URL {
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-        let directory = appSupport.appendingPathComponent("MacAudio2/Recordings", isDirectory: true)
+        let directory = appSupport.appendingPathComponent("Recod/Recordings", isDirectory: true)
         return directory.appendingPathComponent(filename)
     }
 }

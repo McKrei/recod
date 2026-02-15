@@ -114,7 +114,7 @@ public class AudioRecorder: NSObject, ObservableObject, @unchecked Sendable {
     private func getNewRecordingURL() -> URL {
         let fileManager = FileManager.default
         let appSupportURL = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-        let recordingsDir = appSupportURL.appendingPathComponent("MacAudio2/Recordings")
+        let recordingsDir = appSupportURL.appendingPathComponent("Recod/Recordings")
         try? fileManager.createDirectory(at: recordingsDir, withIntermediateDirectories: true)
         
         let formatter = DateFormatter()
@@ -126,7 +126,7 @@ public class AudioRecorder: NSObject, ObservableObject, @unchecked Sendable {
     public func revealRecordingsInFinder() {
         let fileManager = FileManager.default
         if let appSupportURL = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first {
-             let recordingsDir = appSupportURL.appendingPathComponent("MacAudio2/Recordings")
+             let recordingsDir = appSupportURL.appendingPathComponent("Recod/Recordings")
              NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: recordingsDir.path)
         }
     }

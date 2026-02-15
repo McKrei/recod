@@ -1,7 +1,7 @@
 # Design System & Style Guide
 
 ## Core Philosophy
-MacAudio2 follows the "Tahoe" design aesthetic: deep translucency, glass materials, and floating interfaces that blend with the user's wallpaper. The UI relies heavily on `Material` (visual effects) rather than solid colors.
+Recod follows the "Tahoe" design aesthetic: deep translucency, glass materials, and floating interfaces that blend with the user's wallpaper. The UI relies heavily on `Material` (visual effects) rather than solid colors.
 
 ## Central Source of Truth: `AppTheme`
 All styling constants are centrally located in `Sources/DesignSystem/AppTheme.swift`.

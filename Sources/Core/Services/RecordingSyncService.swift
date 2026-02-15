@@ -9,7 +9,7 @@ public struct RecordingSyncService {
     public func syncRecordings(modelContext: ModelContext) async {
         let fileManager = FileManager.default
         guard let appSupportURL = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else { return }
-        let recordingsDir = appSupportURL.appendingPathComponent("MacAudio2/Recordings")
+        let recordingsDir = appSupportURL.appendingPathComponent("Recod/Recordings")
         
         guard let files = try? fileManager.contentsOfDirectory(at: recordingsDir, includingPropertiesForKeys: [.creationDateKey]) else { return }
         

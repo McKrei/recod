@@ -1,6 +1,6 @@
 //
 //  Logger.swift
-//  MacAudio2
+//  Recod
 //
 //  Created for OpenCode.
 //
@@ -28,7 +28,7 @@ public actor FileLogger {
             return
         }
         
-        let appDirectory = appSupportURL.appendingPathComponent("MacAudio2")
+        let appDirectory = appSupportURL.appendingPathComponent("Recod")
         let logsDirectory = appDirectory.appendingPathComponent("Logs")
         
         do {

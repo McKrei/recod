@@ -15,7 +15,7 @@ final class WhisperModelManager: NSObject {
     
     nonisolated private var modelsDirectory: URL {
         let paths = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)
-        let appSupportDir = paths[0].appendingPathComponent("MacAudio2")
+        let appSupportDir = paths[0].appendingPathComponent("Recod")
         let modelsDir = appSupportDir.appendingPathComponent("Models")
         
         if !FileManager.default.fileExists(atPath: modelsDir.path) {

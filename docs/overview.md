@@ -1,7 +1,7 @@
-# MacAudio2 - Project Overview
+# Recod - Project Overview
 
 ## 1. Description
-**MacAudio2** is a native macOS menu bar application designed for quick audio recording and transcription (similar to MacWhisper).
+**Recod** is a native macOS menu bar application designed for quick audio recording and transcription (similar to MacWhisper).
 
 **Key Features:**
 *   **Menu Bar App**: Runs in the background (LSUIElement), accessible via a menu bar icon.
@@ -22,7 +22,7 @@
 
 ## 3. Project Structure
 ```
-MacAudio2/
+Recod/
 ├── Sources/
 │   ├── App/        # App entry point, AppDelegate, AppState
 │   ├── Core/       # Logic: AudioRecorder, HotKeyManager, Logger

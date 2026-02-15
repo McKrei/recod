@@ -1,13 +1,13 @@
 # Application Architecture
 
 ## Overview
-MacAudio2 is a native macOS application built with **SwiftUI 6** and **SwiftData**. It follows a standard MVVM (Model-View-ViewModel) pattern, with a strong emphasis on modern concurrency (`async/await`) and declarative UI.
+Recod is a native macOS application built with **SwiftUI 6** and **SwiftData**. It follows a standard MVVM (Model-View-ViewModel) pattern, with a strong emphasis on modern concurrency (`async/await`) and declarative UI.
 
 ## Project Structure
 
 ```
 Sources/
-├── App/                 # App entry point (MacAudio2App.swift), Global State
+├── App/                 # App entry point (RecodApp.swift), Global State
 ├── Features/            # Feature modules
 │   ├── SettingsView.swift
 │   └── History/         # History feature logic and views
@@ -20,7 +20,7 @@ Sources/
 ## Data Persistence (SwiftData)
 The app uses SwiftData for persisting recordings.
 - **Model**: `Recording` (in `Sources/Model/Recording.swift`).
-- **Container**: Initialized in `MacAudio2App.swift`.
+- **Container**: Initialized in `RecodApp.swift`.
 - **Injection**: Passed via `.modelContainer` to the WindowGroup. `ModelContext` is also injected into `AppState` to allow immediate saving of new recordings.
 - **Usage**: Views use `@Query` to read and `@Environment(\.modelContext)` to write/delete.
 - **Reactivity**: When a recording finishes, `AppState` creates a `Recording` object and inserts it into the context. The `HistoryView` (observing via `@Query`) updates instantly.

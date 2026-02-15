@@ -1,6 +1,6 @@
 //
-//  MacAudio2App.swift
-//  MacAudio2
+//  RecodApp.swift
+//  Recod
 //
 //  Created for OpenCode.
 //
@@ -122,7 +122,7 @@ struct MenuBarContent: View {
 }
 
 @main
-struct MacAudio2App: App {
+struct RecodApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @StateObject private var appState = AppState.shared
     @State private var audioPlayer = AudioPlayer()
@@ -146,7 +146,7 @@ struct MacAudio2App: App {
     }
 
     var body: some Scene {
-        MenuBarExtra("MacAudio2", systemImage: appState.isRecording ? "record.circle.fill" : "mic.circle") {
+        MenuBarExtra("Recod", systemImage: appState.isRecording ? "record.circle.fill" : "mic.circle") {
             MenuBarContent(appState: appState)
                 .modelContainer(modelContainer)
                 .environment(audioPlayer)

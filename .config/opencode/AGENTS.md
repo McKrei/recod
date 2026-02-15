@@ -1,7 +1,7 @@
-# AGENTS.md - System Instructions for MacAudio2
+# AGENTS.md - System Instructions for recod
 
 ## 1. Project Context
-- **Name:** MacAudio2
+- **Name:** recod
 - **Goal:** Lightweight, menu bar audio transcription app (MacWhisper clone).
 - **Architecture:** SwiftPM (Executable Target), MVVM, AppState (ObservableObject).
 - **Style:** "Tahoe" (Glassmorphism, Translucency, macOS 14+).
