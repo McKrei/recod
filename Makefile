@@ -36,7 +36,10 @@ app: build-release
 	@rm -rf $(APP_BUNDLE)
 	@mkdir -p $(MACOS_DIR)
 	@mkdir -p $(RESOURCES_DIR)
+	@mkdir -p $(CONTENTS_DIR)/Frameworks
 	@cp $$(swift build -c release --show-bin-path)/$(APP_NAME) $(MACOS_DIR)/$(APP_NAME)
+	@cp -R $$(swift build -c release --show-bin-path)/Sparkle.framework $(CONTENTS_DIR)/Frameworks/
+	@install_name_tool -add_rpath @executable_path/../Frameworks $(MACOS_DIR)/$(APP_NAME) 2>/dev/null || true
 	@sed -e 's/$$(DEVELOPMENT_LANGUAGE)/en/g' \
 	     -e 's/$$(PRODUCT_BUNDLE_PACKAGE_TYPE)/APPL/g' \
 	     -e 's/$$(MACOSX_DEPLOYMENT_TARGET)/15.0/g' \

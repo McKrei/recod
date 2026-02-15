@@ -32,8 +32,11 @@ jobs:
 
           mkdir -p "${APP_BUNDLE}/Contents/MacOS"
           mkdir -p "${APP_BUNDLE}/Contents/Resources"
+          mkdir -p "${APP_BUNDLE}/Contents/Frameworks"
 
           cp "${BIN_PATH}/${APP_NAME}" "${APP_BUNDLE}/Contents/MacOS/${APP_NAME}"
+          cp -R "${BIN_PATH}/Sparkle.framework" "${APP_BUNDLE}/Contents/Frameworks/"
+          install_name_tool -add_rpath @executable_path/../Frameworks "${APP_BUNDLE}/Contents/MacOS/${APP_NAME}" 2>/dev/null || true
 
           sed -e 's/$(DEVELOPMENT_LANGUAGE)/en/g' \
               -e 's/$(PRODUCT_BUNDLE_PACKAGE_TYPE)/APPL/g' \
