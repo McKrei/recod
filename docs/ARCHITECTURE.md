@@ -1,48 +1,50 @@
-# Application Architecture
+# Архитектура Приложения
 
-## Overview
-Recod is a native macOS application built with **SwiftUI 6** and **SwiftData**. It follows a standard MVVM (Model-View-ViewModel) pattern, with a strong emphasis on modern concurrency (`async/await`) and declarative UI.
+## Обзор
+Recod — это нативное приложение для macOS, созданное с использованием **SwiftUI 6** и **SwiftData**. Оно следует стандартному паттерну MVVM (Model-View-ViewModel), с сильным акцентом на современную конкурентность (`async/await`) и декларативный UI.
 
-## Project Structure
+## Структура Проекта
 
 ```
 Sources/
-├── App/                 # App entry point (RecodApp.swift), Global State
-├── Features/            # Feature modules
-│   ├── SettingsView.swift
-│   └── History/         # History feature logic and views
+├── App/                 # Точка входа (RecodApp.swift), Глобальное состояние
+├── Features/            # Модули функциональности
+│   ├── Settings/        # Экран настроек и его компоненты
+│   └── History/         # Логика и views истории
 ├── Core/
-│   └── Utilities/       # Helpers (WindowAccessor, etc.)
-├── DesignSystem/        # UI Constants (AppTheme) and Styles
-└── Model/               # SwiftData Models (Recording.swift)
+│   ├── Utilities/       # Помощники (WindowAccessor и т.д.)
+│   └── Models/          # Общие модели (HotKeyShortcut)
+├── DesignSystem/        # UI Константы (AppTheme) и Стили
+├── UI/                  # Переиспользуемые UI компоненты (KeyView)
+└── Model/               # SwiftData Модели (Recording.swift)
 ```
 
-## Data Persistence (SwiftData)
-The app uses SwiftData for persisting recordings.
-- **Model**: `Recording` (in `Sources/Model/Recording.swift`).
-- **Container**: Initialized in `RecodApp.swift`.
-- **Injection**: Passed via `.modelContainer` to the WindowGroup. `ModelContext` is also injected into `AppState` to allow immediate saving of new recordings.
-- **Usage**: Views use `@Query` to read and `@Environment(\.modelContext)` to write/delete.
-- **Reactivity**: When a recording finishes, `AppState` creates a `Recording` object and inserts it into the context. The `HistoryView` (observing via `@Query`) updates instantly.
+## Хранение Данных (SwiftData)
+Приложение использует SwiftData для сохранения записей.
+- **Модель**: `Recording` (в `Sources/Model/Recording.swift`).
+- **Контейнер**: Инициализируется в `RecodApp.swift`.
+- **Внедрение**: Передается через `.modelContainer` в WindowGroup. `ModelContext` также внедряется в `AppState` для немедленного сохранения новых записей.
+- **Использование**: Views используют `@Query` для чтения и `@Environment(\.modelContext)` для записи/удаления.
+- **Реактивность**: Когда запись завершается, `AppState` создает объект `Recording` и вставляет его в контекст. `HistoryView` (наблюдающий через `@Query`) обновляется мгновенно.
 
-## Audio Engine
-Audio recording and playback are handled by `AudioPlayer` and `AudioRecorder`.
-- Recording uses `AVAudioEngine` with a tap that converts incoming audio to **16kHz mono WAV** for WhisperKit.
-- Playback uses `AudioPlayer` and is injected via `@Environment`.
+## Аудио Движок
+Запись и воспроизведение аудио обрабатываются `AudioPlayer` и `AudioRecorder`.
+- Запись использует `AVAudioEngine` с tap, который конвертирует входящее аудио в **16kHz mono WAV** для WhisperKit.
+- Воспроизведение использует `AudioPlayer` и внедряется через `@Environment`.
 
-## Transcription Engine
-Transcription is handled by `TranscriptionService` backed by **WhisperKit** (CoreML/ANE).
-- Two-pass pipeline: **detectLanguage** → **transcribe (task: .transcribe)** to avoid unintended translation.
-- Models are downloaded and managed via `WhisperModelManager` (WhisperKit downloader).
+## Движок Транскрибации
+Транскрибация обрабатывается `TranscriptionService` на базе **WhisperKit** (CoreML/ANE).
+- Двухэтапный пайплайн: **detectLanguage** → **transcribe (task: .transcribe)** для предотвращения непреднамеренного перевода.
+- Модели скачиваются и управляются через `WhisperModelManager` (загрузчик WhisperKit).
 
-## The "Glass" Window Trick
-To achieve the "Superwhisper" look (deep transparency):
-1.  **NSWindow**: The underlying window is set to `isOpaque = false` and `backgroundColor = .clear` via `WindowAccessor`.
-2.  **SwiftUI Background**: The root view applies `.background(.ultraThinMaterial)`.
-3.  **Result**: The user's desktop wallpaper shows through blurred behind the app content.
+## Эффект "Стеклянного" Окна
+Для достижения вида "Superwhisper" (глубокая прозрачность):
+1.  **NSWindow**: Базовое окно настроено как `isOpaque = false` и `backgroundColor = .clear` через `WindowAccessor`.
+2.  **SwiftUI Background**: Корневое view применяет `.background(.ultraThinMaterial)`.
+3.  **Результат**: Обои рабочего стола пользователя просвечивают через размытый контент приложения.
 
-## Adding New Features
-1.  **Model**: Define data structures in `Sources/Model`.
-2.  **View**: Create the UI in `Sources/Features/<FeatureName>`.
-3.  **Integration**: Add to `SettingsView` sidebar (if a setting) or `MenuBarContent` (if a primary action).
-4.  **Style**: Strictly use `AppTheme` for layout constants.
+## Добавление Новых Функций
+1.  **Модель**: Определите структуры данных в `Sources/Model`.
+2.  **View**: Создайте UI в `Sources/Features/<FeatureName>`.
+3.  **Интеграция**: Добавьте в боковую панель `SettingsView` (если это настройка) или `MenuBarContent` (если это основное действие).
+4.  **Стиль**: Строго используйте `AppTheme` для констант верстки.

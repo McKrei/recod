@@ -28,5 +28,7 @@
 	<string>https://github.com/McKrei/recod/releases/latest/download/appcast.xml</string>
 	<key>SUPublicEDKey</key>
 	<string>ZA3b5rFFupfm3XZPhGc6TfituFA/7v8IsylON6KFya4=</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
 </dict>
 </plist>

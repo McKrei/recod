@@ -155,10 +155,18 @@ struct RecodApp: App {
     }
 
     var body: some Scene {
-        MenuBarExtra("Recod", systemImage: appState.isRecording ? "record.circle.fill" : "mic.circle") {
+        MenuBarExtra {
             MenuBarContent(appState: appState, updaterManager: updaterManager)
                 .modelContainer(modelContainer)
                 .environment(audioPlayer)
+        } label: {
+            let config = NSImage.SymbolConfiguration(pointSize: 22, weight: .regular)
+            let image = NSImage(
+                systemSymbolName: appState.isRecording ? "record.circle.fill" : "mic.circle",
+                accessibilityDescription: nil
+            )?.withSymbolConfiguration(config)
+
+            Image(nsImage: image ?? NSImage())
         }
         .menuBarExtraStyle(.menu)
 

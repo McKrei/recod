@@ -1,100 +1,100 @@
-# Design System & Style Guide
+# Дизайн-система и Руководство по Стилю
 
-## Core Philosophy
-Recod follows the "Tahoe" design aesthetic: deep translucency, glass materials, and floating interfaces that blend with the user's wallpaper. The UI relies heavily on `Material` (visual effects) rather than solid colors.
+## Основная Философия
+Recod следует эстетике "Tahoe": глубокая полупрозрачность, стеклянные материалы и плавающие интерфейсы, которые сливаются с обоями пользователя. UI сильно полагается на `Material` (визуальные эффекты), а не на сплошные цвета.
 
-## Central Source of Truth: `AppTheme`
-All styling constants are centrally located in `Sources/DesignSystem/AppTheme.swift`.
-**Never hardcode values.** Always refer to `AppTheme`.
+## Центральный Источник Истины: `AppTheme`
+Все константы стилей централизованно расположены в `Sources/DesignSystem/AppTheme.swift`.
+**Никогда не хардкодьте значения.** Всегда ссылайтесь на `AppTheme`.
 
 ```swift
-// Example Usage
+// Пример использования
 .padding(AppTheme.padding)
 .background(AppTheme.glassMaterial)
 .clipShape(RoundedRectangle(cornerRadius: AppTheme.cornerRadius))
 ```
 
-### Key Constants
-- **Padding**: `AppTheme.padding` (Standard 16pt)
-- **Page Padding**: `AppTheme.pagePadding` (30pt) for main content areas
-- **Corner Radius**: `AppTheme.cornerRadius` (Standard 16pt)
-- **Glass Material**: `AppTheme.glassMaterial` (Use for all container backgrounds)
-- **Shadows**: Use `AppTheme.shadowColor`, `radius`, and `y` for consistent depth.
+### Ключевые Константы
+- **Padding**: `AppTheme.padding` (Стандартный 16pt)
+- **Page Padding**: `AppTheme.pagePadding` (30pt) для основных областей контента
+- **Corner Radius**: `AppTheme.cornerRadius` (Стандартный 16pt)
+- **Glass Material**: `AppTheme.glassMaterial` (Использовать для всех фонов контейнеров)
+- **Shadows**: Используйте `AppTheme.shadowColor`, `radius` и `y` для постоянной глубины.
 
 ---
 
-## Components
+## Компоненты
 
-### 1. Settings Header
-Standardized header for all settings pages. Includes title, subtitle, icon, and optional action button.
-**File**: `Sources/DesignSystem/SettingsHeaderView.swift`
+### 1. Заголовок Настроек (Settings Header)
+Стандартизированный заголовок для всех страниц настроек. Включает заголовок, подзаголовок, иконку и опциональную кнопку действия.
+**Файл**: `Sources/DesignSystem/SettingsHeaderView.swift`
 
-Usage:
+Использование:
 ```swift
 SettingsHeaderView(
-    title: "Page Title",
-    subtitle: "Description",
+    title: "Название Страницы",
+    subtitle: "Описание",
     systemImage: "gear"
 ) {
-    // Optional Action Button
-    Button("Add") {}
+    // Опциональная Кнопка Действия
+    Button("Добавить") {}
 }
 ```
 
-### 2. Glass Row Style (Lists)
-Used for items in lists like History, Models, Files.
-**File**: `Sources/DesignSystem/GlassRowStyle.swift`
+### 2. Стиль Стеклянной Строки (Glass Row Style)
+Используется для элементов в списках, таких как История, Модели, Файлы.
+**Файл**: `Sources/DesignSystem/GlassRowStyle.swift`
 
-Usage:
+Использование:
 ```swift
 HStack {
-    // Content
+    // Контент
 }
 .glassRowStyle(isSelected: Bool, isHovering: Bool)
 .onHover { isHovering = $0 }
 ```
 
-### 3. Glass Group Box
-Used for grouping settings or content sections.
-**File**: `Sources/DesignSystem/GlassGroupBoxStyle.swift`
+### 3. Стеклянный Контейнер (Glass Group Box)
+Используется для группировки настроек или секций контента.
+**Файл**: `Sources/DesignSystem/GlassGroupBoxStyle.swift`
 
-Usage:
+Использование:
 ```swift
 GroupBox {
-    // Content
+    // Контент
 }
 .groupBoxStyle(GlassGroupBoxStyle())
 ```
 
-### 4. Standard Action Buttons
-Consistent iconography and hover states for common actions.
-**File**: `Sources/DesignSystem/StandardButtons.swift`
+### 4. Стандартные Кнопки Действий
+Согласованная иконографика и состояния наведения для общих действий.
+**Файл**: `Sources/DesignSystem/StandardButtons.swift`
 
-- `DeleteIconButton(action: ...)`: Trash icon, turns red on hover.
-- `DownloadIconButton(action: ...)`: Cloud download icon.
-- `CancelIconButton(action: ...)`: Small xmark.
-
----
-
-## Navigation
-
-### Sidebar Navigation
-The settings sidebar is a custom implementation to support the "Icon Only" $\leftrightarrow$ "Icon + Text" animation.
-
-**Adding a New Menu Item:**
-1.  Open `Sources/Features/SettingsView.swift`.
-2.  Add a case to the `SettingsSelection` enum.
-3.  Define its `title` and `icon` properties.
-4.  Add the view case to the `body` switch statement in `SettingsView`.
+- `DeleteIconButton(action: ...)`: Иконка корзины, становится красной при наведении.
+- `DownloadIconButton(action: ...)`: Иконка облачной загрузки.
+- `CancelIconButton(action: ...)`: Маленький крестик (xmark).
 
 ---
 
-## Window Styling
-The application uses a hidden title bar and a transparent window background to allow the `Material` effects to work correctly.
+## Навигация
+
+### Навигация Боковой Панели
+Боковая панель настроек — это кастомная реализация для поддержки анимации "Только Иконка" $\leftrightarrow$ "Иконка + Текст".
+
+**Добавление Нового Пункта Меню:**
+1.  Откройте `Sources/Features/SettingsView.swift` (или `Sources/Features/Settings/Models/SettingsSelection.swift`, если вынесено).
+2.  Добавьте кейс в перечисление `SettingsSelection`.
+3.  Определите его свойства `title` и `icon`.
+4.  Добавьте кейс view в `switch` statement в `SettingsView`.
+
+---
+
+## Стилизация Окон
+Приложение использует скрытый заголовок окна и прозрачный фон окна для корректной работы эффектов `Material`.
 
 **WindowAccessor**: `Sources/Core/Utilities/WindowAccessor.swift`
 
-**Standard Configuration:**
+**Стандартная Конфигурация:**
 ```swift
 .background(WindowAccessor { window in
     window.isOpaque = false

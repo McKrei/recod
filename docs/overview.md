@@ -1,39 +1,39 @@
-# Recod - Project Overview
+# Recod - Обзор Проекта
 
-## 1. Description
-**Recod** is a native macOS menu bar application designed for quick audio recording and transcription (similar to MacWhisper).
+## 1. Описание
+**Recod** — это нативное приложение для macOS, живущее в строке меню, предназначенное для быстрой записи аудио и транскрибации (похоже на MacWhisper).
 
-**Key Features:**
-*   **Menu Bar App**: Runs in the background (LSUIElement), accessible via a menu bar icon.
-*   **Global Hotkey**: Toggle recording instantly with `Cmd+Shift+R`.
-*   **Visual Feedback**: Minimalist floating indicator with pulsating recording status.
-*   **Reactive History**: New recordings appear instantly in the history list without refresh.
-*   **Audio Capture**: Uses `AVAudioEngine` with on-the-fly conversion to 16kHz mono WAV.
-*   **Privacy First**: Local processing and explicit permission handling.
+**Ключевые Особенности:**
+*   **Menu Bar App**: Работает в фоне (LSUIElement), доступно через иконку в строке меню.
+*   **Глобальный Хоткей**: Мгновенное переключение записи с помощью `Cmd+Shift+R`.
+*   **Визуальная Обратная Связь**: Минималистичный плавающий индикатор с пульсирующим статусом записи.
+*   **Реактивная История**: Новые записи появляются в списке истории мгновенно без обновления.
+*   **Захват Аудио**: Использует `AVAudioEngine` с конвертацией на лету в 16kHz mono WAV.
+*   **Приватность**: Локальная обработка и явное управление разрешениями.
 
-## 2. Tech Stack
-*   **Target OS**: macOS 14.0+ (Sonoma/Sequoia).
-*   **Language**: Swift 6 (Strict Concurrency).
-*   **UI Framework**: SwiftUI (100%).
-*   **Architecture**: MVVM (Model-View-ViewModel) + AppState (ObservableObject singleton).
-*   **Audio**: AVFoundation (`AVAudioEngine`).
-*   **System Integration**: Carbon (Global Hotkeys), AppKit (Window Management).
-*   **Build System**: Swift Package Manager (Executable Target).
+## 2. Технологический Стек
+*   **Целевая ОС**: macOS 14.0+ (Sonoma/Sequoia).
+*   **Язык**: Swift 6 (Strict Concurrency).
+*   **UI Фреймворк**: SwiftUI (100%).
+*   **Архитектура**: MVVM (Model-View-ViewModel) + AppState (ObservableObject singleton).
+*   **Аудио**: AVFoundation (`AVAudioEngine`).
+*   **Системная Интеграция**: Carbon (Глобальные Хоткеи), AppKit (Управление Окнами).
+*   **Система Сборки**: Swift Package Manager (Executable Target).
 
-## 3. Project Structure
+## 3. Структура Проекта
 ```
 Recod/
 ├── Sources/
-│   ├── App/        # App entry point, AppDelegate, AppState
-│   ├── Core/       # Logic: AudioRecorder, HotKeyManager, Logger
-│   └── Features/   # UI: OverlayView, SettingsView
-├── Package.swift   # SwiftPM Configuration
-├── Info.plist      # Application Metadata & Permissions
-└── docs/           # Documentation
+│   ├── App/        # Точка входа, AppDelegate, AppState
+│   ├── Core/       # Логика: AudioRecorder, HotKeyManager, Logger
+│   └── Features/   # UI: OverlayView, SettingsView, History
+├── Package.swift   # Конфигурация SwiftPM
+├── Info.plist      # Метаданные Приложения & Разрешения
+└── docs/           # Документация
 ```
 
-## 4. Design Guidelines ("Tahoe")
-*   **Glassmorphism**: Use `.ultraThinMaterial` and `.thickMaterial` for backgrounds.
-*   **Translucency**: Windows should feel light and float above content.
-*   **Typography**: SF Pro, dynamic type.
-*   **Interactions**: Hover effects, smooth animations (Spring).
+## 4. Гайдлайны Дизайна ("Tahoe")
+*   **Glassmorphism**: Используйте `.ultraThinMaterial` и `.thickMaterial` для фонов.
+*   **Полупрозрачность**: Окна должны ощущаться легкими и парить над контентом.
+*   **Типографика**: SF Pro, динамический шрифт.
+*   **Взаимодействия**: Эффекты наведения (Hover), плавные анимации (Spring).
