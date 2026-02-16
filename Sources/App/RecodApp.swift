@@ -132,6 +132,7 @@ struct RecodApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @StateObject private var appState = AppState.shared
     @StateObject private var updaterManager = UpdaterManager()
+    @StateObject private var launchAtLoginService = LaunchAtLoginService()
     @State private var audioPlayer = AudioPlayer()
 
     let modelContainer: ModelContainer
@@ -174,6 +175,7 @@ struct RecodApp: App {
         WindowGroup(id: "settings") {
             SettingsView()
                 .environmentObject(appState)
+                .environmentObject(launchAtLoginService)
                 .environment(audioPlayer)
                 .modelContainer(modelContainer)
                 .background(WindowAccessor { window in

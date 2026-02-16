@@ -2,6 +2,7 @@ import SwiftUI
 
 struct GeneralSettingsView: View {
     @EnvironmentObject var appState: AppState
+    @EnvironmentObject var launchAtLoginService: LaunchAtLoginService
 
     var body: some View {
         ScrollView {
@@ -40,6 +41,32 @@ struct GeneralSettingsView: View {
                             Button("Open Log File") {
                                 appState.revealLogs()
                             }
+                        }
+                    }
+                    .padding(8)
+                }
+                .groupBoxStyle(GlassGroupBoxStyle())
+
+
+
+                GroupBox {
+                    VStack(alignment: .leading, spacing: 16) {
+                        Label("System", systemImage: "macwindow")
+                            .font(.headline)
+                            .foregroundStyle(.primary)
+
+                        Divider()
+
+                        HStack {
+                            VStack(alignment: .leading) {
+                                Text("Launch at Login")
+                                    .font(.body)
+                                Text("Automatically start Recod when you log in")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            StatusToggle(isOn: $launchAtLoginService.isEnabled)
                         }
                     }
                     .padding(8)
