@@ -9,7 +9,16 @@ public enum AudioRecorderError: Error {
     case recordingFailed
 }
 
+/// Manages audio recording from both the microphone and system audio (macOS 12.3+).
+///
+/// This class configures an `AVAudioEngine` to mix input from the default microphone
+/// and the system audio capture stream (via `ScreenCaptureKit`).
+/// The output is written to a stereo WAV file where:
+/// - Left Channel (-1.0): Microphone Input
+/// - Right Channel (1.0): System Audio
 public class AudioRecorder: NSObject, ObservableObject, @unchecked Sendable {
+    // MARK: - Properties
+
     private var audioEngine: AVAudioEngine?
     private var audioFile: AVAudioFile?
     private var tapInstalled = false
@@ -32,6 +41,13 @@ public class AudioRecorder: NSObject, ObservableObject, @unchecked Sendable {
         }
     }
 
+    // MARK: - Public Methods
+
+    /// Starts the recording process.
+    ///
+    /// This method sets up the audio engine, configures microphone and system audio inputs,
+    /// and starts writing to a new audio file.
+    /// - Throws: `AudioRecorderError` if permission is denied or setup fails.
     public func startRecording() async throws {
         let granted = await requestPermission()
         guard granted else { throw AudioRecorderError.permissionDenied }
@@ -134,6 +150,8 @@ public class AudioRecorder: NSObject, ObservableObject, @unchecked Sendable {
         }
     }
 
+    /// Stops the recording and closes the file.
+    /// - Returns: The URL of the recorded file, or `nil` if no recording was active.
     public func stopRecording() async -> URL? {
         guard let engine = audioEngine, isRecording else { return nil }
 
@@ -191,6 +209,8 @@ public class AudioRecorder: NSObject, ObservableObject, @unchecked Sendable {
         objc_setAssociatedObject(self, "StreamOutput", output, .OBJC_ASSOCIATION_RETAIN)
     }
 
+    // MARK: - Internal Helper Methods
+
     private func getNewRecordingURL() -> URL {
         let fileManager = FileManager.default
         let appSupportURL = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
@@ -202,58 +222,13 @@ public class AudioRecorder: NSObject, ObservableObject, @unchecked Sendable {
         return recordingsDir.appendingPathComponent("recording-\(formatter.string(from: Date())).wav")
     }
 
+    /// Reveals the recordings directory in Finder.
     @MainActor
     public func revealRecordingsInFinder() {
         let fileManager = FileManager.default
         if let appSupportURL = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first {
              let recordingsDir = appSupportURL.appendingPathComponent("Recod/Recordings")
              NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: recordingsDir.path)
-        }
-    }
-}
-
-// MARK: - SCStreamOutput Helper
-
-@available(macOS 12.3, *)
-private class StreamOutput: NSObject, SCStreamOutput {
-    let playerNode: AVAudioPlayerNode
-    let engineSampleRate: Double = 16000.0
-    var converter: AVAudioConverter?
-
-    init(playerNode: AVAudioPlayerNode) {
-        self.playerNode = playerNode
-    }
-
-    func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {
-        guard type == SCStreamOutputType.audio else { return }
-
-        if let buffer = createPCMBuffer(from: sampleBuffer) {
-            playerNode.scheduleBuffer(buffer)
-        }
-    }
-
-    func createPCMBuffer(from sampleBuffer: CMSampleBuffer) -> AVAudioPCMBuffer? {
-        try? sampleBuffer.withAudioBufferList { audioBufferList, _ -> AVAudioPCMBuffer? in
-            guard var absd = sampleBuffer.formatDescription?.audioStreamBasicDescription else { return nil }
-            guard let format = withUnsafePointer(to: &absd, { AVAudioFormat(streamDescription: $0) }) else { return nil }
-
-            let frameCount = UInt32(sampleBuffer.numSamples)
-            guard let pcmBuffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frameCount) else { return nil }
-            pcmBuffer.frameLength = frameCount
-
-            if let floatChannelData = pcmBuffer.floatChannelData {
-                for (i, buffer) in audioBufferList.enumerated() {
-                    if i < Int(format.channelCount) {
-                         if let srcData = buffer.mData {
-                             let dst = floatChannelData[i]
-                             let bytesToCopy = min(Int(buffer.mDataByteSize), Int(frameCount) * MemoryLayout<Float>.size)
-                             memcpy(dst, srcData, bytesToCopy)
-                         }
-                    }
-                }
-            }
-
-            return pcmBuffer
         }
     }
 }

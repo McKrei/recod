@@ -160,3 +160,41 @@ When adding a new Settings Page or Feature View:
 4.  **Buttons:**
     - Use standard buttons from `Sources/DesignSystem/StandardButtons.swift` (`DeleteIconButton`, etc).
     - For main actions, use `.bordered` style (gray), not `.borderedProminent` (blue), unless it is the primary call to action in a modal.
+
+## 14. UI Component Standards (MANDATORY)
+**Use these components instead of standard SwiftUI elements to maintain design consistency.**
+
+### Toggles
+- **Use:** `StatusToggle(isOn: $binding)`
+- **Do NOT Use:** `Toggle("Label", isOn: $binding)`
+- **Why:** `StatusToggle` has a specific scale (0.85) and an indicator dot (green/red) that matches the app's visual language. Standard toggles look too large and out of place.
+
+### Grouping
+- **Use:** `GroupBox { ... } .groupBoxStyle(GlassGroupBoxStyle())`
+- **Do NOT Use:** `GroupBox` with default style or plain `VStack` with background.
+- **Why:** Provides the correct translucency and corner radius (16pt).
+
+### Lists & Rows
+- **Use:** `GlassRowStyle()` modifier on `HStack` or `VStack`.
+- **Structure:**
+  ```swift
+  HStack {
+      // content
+  }
+  .padding(.horizontal, 12)
+  .padding(.vertical, 8)
+  .background(Color.white.opacity(isHovering ? 0.1 : 0.05))
+  .cornerRadius(8)
+  .onHover { isHovering = $0 }
+  ```
+  *(Or use the extracted `GlassRow` component if available)*
+
+### Headers
+- **Use:** `SettingsHeaderView(title: ..., subtitle: ..., systemImage: ...)`
+- **Do NOT Use:** Custom `HStack` with `Text("Title").font(.title)`.
+- **Why:** Ensures consistent spacing, icon size, and typography across all settings pages.
+
+### Buttons
+- **Destructive:** `DeleteIconButton(action: ...)`
+- **Ghost/Icon:** `IconButton(systemName: "...", action: ...)`
+- **Standard:** `Button("Label") { ... }.buttonStyle(.bordered)` (Gray, not Blue).
