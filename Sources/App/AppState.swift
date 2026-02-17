@@ -141,7 +141,8 @@ class AppState: ObservableObject {
                 try? modelContext.save()
 
                 do {
-                    let rawText = try await TranscriptionService.shared.transcribe(audioURL: url, modelURL: modelURL)
+                    let (rawText, segments) = try await TranscriptionService.shared.transcribe(audioURL: url, modelURL: modelURL)
+                    recording.segments = segments
 
 
                     // Apply text replacements

@@ -18,6 +18,7 @@ final class Recording {
     var filename: String
     var isFileDeleted: Bool = false
 
+    @Attribute(.externalStorage) var segments: [TranscriptionSegment]?
 
     init(
         id: UUID = UUID(),
@@ -26,7 +27,8 @@ final class Recording {
         transcription: String? = nil,
         transcriptionStatus: TranscriptionStatus? = .pending,
         filename: String,
-        isFileDeleted: Bool = false
+        isFileDeleted: Bool = false,
+        segments: [TranscriptionSegment]? = nil
     ) {
         self.id = id
         self.createdAt = createdAt
@@ -35,6 +37,7 @@ final class Recording {
         self.transcriptionStatus = transcriptionStatus
         self.filename = filename
         self.isFileDeleted = isFileDeleted
+        self.segments = segments
     }
 
 
@@ -44,4 +47,11 @@ final class Recording {
         let directory = appSupport.appendingPathComponent("Recod/Recordings", isDirectory: true)
         return directory.appendingPathComponent(filename)
     }
+}
+
+struct TranscriptionSegment: Codable, Identifiable, Hashable {
+    var id: UUID = UUID()
+    var start: TimeInterval
+    var end: TimeInterval
+    var text: String
 }

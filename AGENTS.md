@@ -198,3 +198,9 @@ When adding a new Settings Page or Feature View:
 - **Destructive:** `DeleteIconButton(action: ...)`
 - **Ghost/Icon:** `IconButton(systemName: "...", action: ...)`
 - **Standard:** `Button("Label") { ... }.buttonStyle(.bordered)` (Gray, not Blue).
+
+## 15. WhisperKit Transcription Standards
+- **Special Tokens**: WhisperKit output often contains special tokens like `<|startoftranscript|>`, `<|en|>`, `<|transcribe|>`.
+- **Mandatory Cleaning**: ALWAYS use `TranscriptionService.cleanTranscriptionText(_:)` before displaying or saving transcription text to the database.
+- **Segments**: When processing segments, ensure each segment's text is also cleaned.
+- **Formatting**: Timestamps in UI must follow the `M:SS.S` format (e.g., `0:05.2`). Use `TranscriptionDetailView` for displaying segment lists.
