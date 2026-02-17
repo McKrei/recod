@@ -25,6 +25,8 @@ class AppState: ObservableObject {
     @Published public var isOverlayVisible = false
     @Published public var overlayStatus: OverlayStatus = .recording
 
+    @AppStorage("recordSystemAudio") public var recordSystemAudio: Bool = false
+
     // Injected by App
     public var modelContext: ModelContext?
 
@@ -77,6 +79,10 @@ class AppState: ObservableObject {
 
             do {
                 overlayStatus = .recording
+
+                // Configure Recorder
+                audioRecorder.recordSystemAudio = recordSystemAudio
+
                 try await audioRecorder.startRecording()
                 self.isOverlayVisible = true
             } catch {

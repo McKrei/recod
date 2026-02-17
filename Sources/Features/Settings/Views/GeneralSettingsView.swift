@@ -68,6 +68,20 @@ struct GeneralSettingsView: View {
                             Spacer()
                             StatusToggle(isOn: $launchAtLoginService.isEnabled)
                         }
+
+                        Divider()
+
+                        HStack {
+                            VStack(alignment: .leading) {
+                                Text("Record System Audio")
+                                    .font(.body)
+                                Text("Include computer sound (stereo split)")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            StatusToggle(isOn: $appState.recordSystemAudio)
+                        }
                     }
                     .padding(8)
                 }

@@ -37,7 +37,9 @@ let package = Package(
                     "-Xlinker", "__TEXT",
                     "-Xlinker", "__info_plist",
                     "-Xlinker", "Info.plist"
-                ])
+                ]),
+                .linkedFramework("ScreenCaptureKit"),
+                .linkedFramework("CoreMedia")
             ]
         )
     ]
