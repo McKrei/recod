@@ -186,18 +186,15 @@ When adding a new Settings Page or Feature View:
 
 ### Lists & Rows
 - **Use:** `GlassRowStyle()` modifier on `HStack` or `VStack`.
+- **Warning:** `GlassRowStyle` already includes internal padding (`AppTheme.padding`). **DO NOT** add extra `.padding()` to the row container unless explicitly needed for sub-alignment.
 - **Structure:**
   ```swift
   HStack {
       // content
   }
-  .padding(.horizontal, 12)
-  .padding(.vertical, 8)
-  .background(Color.white.opacity(isHovering ? 0.1 : 0.05))
-  .cornerRadius(8)
+  .glassRowStyle(isHovering: isHovering)
   .onHover { isHovering = $0 }
   ```
-  *(Or use the extracted `GlassRow` component if available)*
 
 ### Headers
 - **Use:** `SettingsHeaderView(title: ..., subtitle: ..., systemImage: ...)`
