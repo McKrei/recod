@@ -88,9 +88,19 @@ Resources/       # Assets, Strings, Plists
   - `WhisperModelManager` handles downloading/deleting models via WhisperKit's built-in downloader.
   - Models are stored in `~/Library/Application Support/Recod/Models/models/argmaxinc/whisperkit-coreml`.
 
-## 9. Audio Recording Format
-- Recording uses `AVAudioEngine` with a tap that converts audio to **16kHz mono WAV**.
-- This ensures WhisperKit receives consistent PCM data and avoids empty/invalid frames.
+### Аудио (AudioRecorder)
+- **Стабильный граф**: `AVAudioEngine` и его узлы (`recordingMixer`, `micMixer`, `sysPlayerNode`) инициализируются **один раз** при первом обращении (`setupGraph()`). Они остаются активными (прикрепленными к движку) на протяжении всей жизни приложения.
+- **Двухканальная запись**:
+  - Канал 0 (Bus 0): Микрофон (panned hard Left).
+  - Канал 1 (Bus 1): Системный звук (panned hard Right).
+- **SCStream (ScreenCaptureKit)**: Используется для системного звука. Требует macOS 12.3+. Потоки конвертируются через `StreamOutput`.
+- **Pre-warming (Прогрев)**: При запуске приложения вызывается `prewarm()`, который запускает двигатель на 1 секунду, чтобы "разбудить" оборудование и запросить права доступа, а затем останавливает его.
+- **Индикатор микрофона**: Чтобы не пугать пользователей, `engine.stop()` вызывается после каждой записи. Это немедленно гасит оранжевую точку в macOS.
+- **Формат**: Линейный PCM, 16кГц, Стерео (16бит).
+
+## 9. Audio Recording Format (DEPRECATED - See section 8)
+- Recording uses `AVAudioEngine` with a tap on `recordingMixer`.
+- Output is a 16kHz Stereo WAV file (Mic on Left, System on Right).
 
 ## 10. Global Hotkeys System
 - **Engine:** Carbon API (`RegisterEventHotKey`/`UnregisterEventHotKey`). This is the only way to register truly global hotkeys on macOS.

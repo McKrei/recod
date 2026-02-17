@@ -13,24 +13,51 @@ public enum AudioRecorderError: Error {
 ///
 /// This class configures an `AVAudioEngine` to mix input from the default microphone
 /// and the system audio capture stream (via `ScreenCaptureKit`).
-/// The output is written to a stereo WAV file where:
-/// - Left Channel (-1.0): Microphone Input
-/// - Right Channel (1.0): System Audio
 public class AudioRecorder: NSObject, ObservableObject, @unchecked Sendable {
     // MARK: - Properties
 
-    private var audioEngine: AVAudioEngine?
+    private let engine = AVAudioEngine()
+    private let recordingMixer = AVAudioMixerNode()
+    private let micMixer = AVAudioMixerNode()
+    private var sysPlayerNode: AVAudioPlayerNode?
+
     private var audioFile: AVAudioFile?
     private var tapInstalled = false
+    private var graphInitialized = false
 
     // System Audio
     private var scStream: SCStream?
-    private var sysAudioSourceNode: AVAudioSourceNode?
 
     // Config
     public var recordSystemAudio: Bool = false
 
     @Published public var isRecording = false
+
+    // MARK: - Initializer & Pre-warm
+
+    public override init() {
+        super.init()
+    }
+
+    /// Pre-warms the audio engine by initializing the graph and starting the engine.
+    /// This triggers hardware initialization and permission prompts.
+    public func prewarm() {
+        setupGraph()
+        Task {
+            do {
+                engine.prepare()
+                try engine.start()
+                Log("AudioRecorder engine pre-warmed for 1s...")
+                try await Task.sleep(nanoseconds: 1_000_000_000) // 1 second
+                engine.stop()
+                Log("AudioRecorder engine stopped after pre-warm (indicator off)")
+            } catch {
+                Log("AudioRecorder pre-warm engine start failed: \(error)", level: .error)
+            }
+        }
+    }
+
+    // MARK: - Public Methods
 
     public func requestPermission() async -> Bool {
         let status = AVCaptureDevice.authorizationStatus(for: .audio)
@@ -41,75 +68,43 @@ public class AudioRecorder: NSObject, ObservableObject, @unchecked Sendable {
         }
     }
 
-    // MARK: - Public Methods
-
     /// Starts the recording process.
-    ///
-    /// This method sets up the audio engine, configures microphone and system audio inputs,
-    /// and starts writing to a new audio file.
-    /// - Throws: `AudioRecorderError` if permission is denied or setup fails.
     public func startRecording() async throws {
         let granted = await requestPermission()
         guard granted else { throw AudioRecorderError.permissionDenied }
 
-        let engine = AVAudioEngine()
-        let mainMixer = engine.mainMixerNode
+        setupGraph()
 
-        // CRITICAL FIX: Silence the main mixer output to prevent feedback loop.
-        // We only want to record, not play back the mic/system audio to speakers.
-        mainMixer.outputVolume = 0.0
-
-        // Create a separate mixer for recording
-        let recordingMixer = AVAudioMixerNode()
-        engine.attach(recordingMixer)
-
-        // Output format (Stereo, 16kHz)
-        // We use 2 channels: Left = Mic, Right = System
-        let outputFormat = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 16000, channels: 2, interleaved: false)!
-
-        // System Audio Format (Stereo, 48kHz) - To match SCStream
-        let sysFormat = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 48000, channels: 2, interleaved: false)!
-
-        // 1. Setup Microphone (Left Channel)
-        let inputNode = engine.inputNode
-        let micFormat = inputNode.outputFormat(forBus: 0)
-        let micMixer = AVAudioMixerNode()
-        engine.attach(micMixer)
-
-        // Downmix mic to mono first if needed, then pan
-        engine.connect(inputNode, to: micMixer, format: micFormat)
-        micMixer.pan = -1.0 // Pan hard LEFT
-
-        // Connect micMixer to recordingMixer
-        engine.connect(micMixer, to: recordingMixer, format: outputFormat)
-
-        // 2. Setup System Audio (Right Channel)
-        var sysPlayerNode: AVAudioPlayerNode?
-        if recordSystemAudio {
-            if #available(macOS 12.3, *) {
-                sysPlayerNode = AVAudioPlayerNode()
-                if let sysPlayer = sysPlayerNode {
-                    engine.attach(sysPlayer)
-                    sysPlayer.pan = 1.0 // Pan hard RIGHT
-                    // Connect sysPlayer to recordingMixer
-                    engine.connect(sysPlayer, to: recordingMixer, format: sysFormat)
-                }
-
-                try await startSystemAudioCapture(to: sysPlayerNode!)
-            } else {
-                Log("System audio recording requires macOS 12.3+", level: .error)
+        // 1. Ensure engine is running
+        if !engine.isRunning {
+            do {
+                engine.prepare()
+                try engine.start()
+                // Give some time for hardware to stabilize
+                try? await Task.sleep(nanoseconds: 200_000_000)
+            } catch {
+                Log("Engine start failed: \(error)", level: .error)
+                throw AudioRecorderError.setupFailed
             }
         }
 
-        // Connect recordingMixer to mainMixer (to keep graph valid), but mainMixer output is silenced.
-        engine.connect(recordingMixer, to: mainMixer, format: outputFormat)
+        // 2. Setup System Audio Capture if needed
+        if recordSystemAudio {
+            if #available(macOS 12.3, *) {
+                if scStream == nil {
+                    try await startSystemAudioCapture()
+                }
+            }
+        }
 
+        sysPlayerNode?.play()
+
+        // 3. Create File
         let fileURL = getNewRecordingURL()
-
         let settings: [String: Any] = [
             AVFormatIDKey: Int(kAudioFormatLinearPCM),
             AVSampleRateKey: 16000.0,
-            AVNumberOfChannelsKey: 2, // Stereo
+            AVNumberOfChannelsKey: 2,
             AVLinearPCMBitDepthKey: 16,
             AVLinearPCMIsBigEndianKey: false,
             AVLinearPCMIsFloatKey: false
@@ -123,39 +118,31 @@ public class AudioRecorder: NSObject, ObservableObject, @unchecked Sendable {
             throw AudioRecorderError.setupFailed
         }
 
-        // Install Tap on RECORDING Mixer to capture combined output
+        // 4. Install Tap
+        let outputFormat = recordingMixer.outputFormat(forBus: 0)
         recordingMixer.installTap(onBus: 0, bufferSize: 4096, format: outputFormat) { [weak self] buffer, time in
             guard let self = self, let audioFile = self.audioFile else { return }
-
             do {
                 try audioFile.write(from: buffer)
             } catch {
                 Log("Write error: \(error)", level: .error)
             }
         }
-
         tapInstalled = true
 
-        do {
-            engine.prepare()
-            try engine.start()
-            sysPlayerNode?.play() // Start playing silence/buffers
-
-            self.audioEngine = engine
-            await MainActor.run { self.isRecording = true }
-            Log("Recording started (System Audio: \(recordSystemAudio))")
-        } catch {
-            Log("Engine start failed: \(error)", level: .error)
-            throw AudioRecorderError.setupFailed
-        }
+        await MainActor.run { self.isRecording = true }
+        Log("Recording started (System Audio: \(recordSystemAudio))")
     }
 
     /// Stops the recording and closes the file.
-    /// - Returns: The URL of the recorded file, or `nil` if no recording was active.
     public func stopRecording() async -> URL? {
-        guard let engine = audioEngine, isRecording else { return nil }
+        guard isRecording else { return nil }
 
-        try? await Task.sleep(nanoseconds: 500_000_000)
+        // Grace period to catch last samples
+        try? await Task.sleep(nanoseconds: 300_000_000)
+
+        recordingMixer.removeTap(onBus: 0)
+        tapInstalled = false
 
         // Stop Screen Capture
         if #available(macOS 12.3, *) {
@@ -165,51 +152,82 @@ public class AudioRecorder: NSObject, ObservableObject, @unchecked Sendable {
             }
         }
 
-        // Note: Tap is now on separate mixer, but engine release handles it.
-        // Good practice to remove it though.
-        // We don't have easy access to recordingMixer variable here unless stored.
-        // But throwing away the engine cleans it up.
+        sysPlayerNode?.stop()
 
-        engine.stop()
         let url = audioFile?.url
         audioFile = nil
 
         await MainActor.run { self.isRecording = false }
-        self.audioEngine = nil
-        Log("Recording stopped and file closed")
+        Log("Recording stopped")
+
+        // Stop engine to hide the orange dot and save resources
+        engine.stop()
+
         return url
     }
 
-    // MARK: - System Audio Capture (macOS 12.3+)
+    // MARK: - Private Helpers
+
+    private func setupGraph() {
+        guard !graphInitialized else { return }
+
+        Log("Initializing AudioRecorder graph...")
+
+        let mainMixer = engine.mainMixerNode
+        mainMixer.outputVolume = 0.0
+
+        engine.attach(recordingMixer)
+        engine.attach(micMixer)
+
+        // Formats
+        let recordingFormat = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 16000, channels: 2, interleaved: false)!
+        let sysFormat = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 48000, channels: 2, interleaved: false)!
+
+        // 1. Microphone Setup
+        let inputNode = engine.inputNode
+        let inputFormat = inputNode.outputFormat(forBus: 0)
+
+        engine.connect(inputNode, to: micMixer, format: inputFormat)
+        micMixer.pan = -1.0 // Left
+        engine.connect(micMixer, to: recordingMixer, format: recordingFormat)
+
+        // 2. System Audio Setup
+        if #available(macOS 12.3, *) {
+            let player = AVAudioPlayerNode()
+            engine.attach(player)
+            player.pan = 1.0 // Right
+            engine.connect(player, to: recordingMixer, format: sysFormat)
+            self.sysPlayerNode = player
+        }
+
+        // 3. Final Connection
+        engine.connect(recordingMixer, to: mainMixer, format: recordingFormat)
+
+        graphInitialized = true
+        Log("AudioRecorder graph initialized")
+    }
 
     @available(macOS 12.3, *)
-    private func startSystemAudioCapture(to playerNode: AVAudioPlayerNode) async throws {
-        // Fallback to .current for compatibility
+    private func startSystemAudioCapture() async throws {
         let content = try await SCShareableContent.current
-
         guard let display = content.displays.first else { throw AudioRecorderError.setupFailed }
+        guard let playerNode = sysPlayerNode else { return }
 
         let filter = SCContentFilter(display: display, excludingApplications: [], exceptingWindows: [])
         let config = SCStreamConfiguration()
         config.capturesAudio = true
-        config.minimumFrameInterval = CMTime(value: 1, timescale: 60)
-        config.queueDepth = 5
         config.sampleRate = 48000
         config.channelCount = 2
 
         let stream = SCStream(filter: filter, configuration: config, delegate: nil)
-
         let output = StreamOutput(playerNode: playerNode)
 
-        try stream.addStreamOutput(output, type: SCStreamOutputType.audio, sampleHandlerQueue: DispatchQueue(label: "audio.capture.queue"))
-
+        try stream.addStreamOutput(output, type: .audio, sampleHandlerQueue: DispatchQueue(label: "audio.capture.queue"))
         try await stream.startCapture()
-        self.scStream = stream
 
+        self.scStream = stream
         objc_setAssociatedObject(self, "StreamOutput", output, .OBJC_ASSOCIATION_RETAIN)
     }
-
-    // MARK: - Internal Helper Methods
 
     private func getNewRecordingURL() -> URL {
         let fileManager = FileManager.default
@@ -222,7 +240,6 @@ public class AudioRecorder: NSObject, ObservableObject, @unchecked Sendable {
         return recordingsDir.appendingPathComponent("recording-\(formatter.string(from: Date())).wav")
     }
 
-    /// Reveals the recordings directory in Finder.
     @MainActor
     public func revealRecordingsInFinder() {
         let fileManager = FileManager.default

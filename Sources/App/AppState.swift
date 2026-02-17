@@ -60,6 +60,11 @@ class AppState: ObservableObject {
         HotKeyManager.shared.registerDefault()
     }
 
+    /// Pre-warms the audio recorder to avoid "cold start" delays.
+    func prewarmAudio() {
+        audioRecorder.prewarm()
+    }
+
     func toggleRecording() {
         if isRecording {
             stopRecording()
@@ -70,9 +75,10 @@ class AppState: ObservableObject {
 
     func startRecording() {
         Task {
+            // Pre-load model in background if not already loaded
             if let modelId = whisperModelManager.selectedModelId,
                let modelURL = whisperModelManager.getModelURL(for: modelId) {
-                Task {
+                Task.detached(priority: .userInitiated) {
                     await TranscriptionService.shared.prepareModel(modelURL: modelURL)
                 }
             }

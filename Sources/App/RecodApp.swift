@@ -19,6 +19,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         setupOverlayWindow()
         setupSignalHandlers()
 
+        // Pre-warm audio engine to avoid first recording being empty
+        AppState.shared.prewarmAudio()
+
         // Observe AppState
         Task { @MainActor in
             AppState.shared.$isOverlayVisible
