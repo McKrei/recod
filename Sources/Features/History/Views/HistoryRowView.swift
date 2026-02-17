@@ -18,9 +18,9 @@ struct HistoryRowView: View {
     var body: some View {
         HStack(alignment: .top, spacing: AppTheme.spacing) {
             playPauseButton
-                .padding(.top, 4)
+                .padding(.top, 2)
 
-            VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 8) {
                 // Header: Date and Duration
                 HStack {
                     Text(recording.createdAt.formatted(date: .abbreviated, time: .shortened))
@@ -35,7 +35,7 @@ struct HistoryRowView: View {
                 }
 
                 // Transcription Content
-                VStack(alignment: .leading, spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
                     switch recording.transcriptionStatus ?? .completed {
                     case .transcribing:
                         HStack(spacing: 8) {
@@ -46,7 +46,7 @@ struct HistoryRowView: View {
                         }
                     case .completed:
                         if let transcription = recording.transcription, !transcription.isEmpty {
-                            VStack(alignment: .leading, spacing: 8) {
+                            VStack(alignment: .leading, spacing: 6) {
                                 // 1. Main Text (Expandable)
                                 Text(transcription)
                                     .foregroundStyle(.primary)
@@ -76,7 +76,7 @@ struct HistoryRowView: View {
                                         .foregroundStyle(Color.accentColor)
                                     }
                                     .buttonStyle(.plain)
-                                    .padding(.top, 4)
+                                    .padding(.top, 2)
 
                                     // 3. Detailed Segments List
                                     if isSegmentsExpanded {
@@ -107,7 +107,7 @@ struct HistoryRowView: View {
             }
 
             // Actions Column
-            VStack(spacing: 8) {
+            VStack(spacing: 6) {
                 if let transcription = recording.transcription, !transcription.isEmpty {
                     Button {
                         ClipboardService.shared.copyToClipboard(transcription)
@@ -121,10 +121,10 @@ struct HistoryRowView: View {
                         }
                     } label: {
                         Image(systemName: showCopyFeedback ? "checkmark" : "doc.on.doc")
-                            .font(.system(size: 14))
+                            .font(.system(size: 13))
                             .foregroundStyle(showCopyFeedback ? .green : .secondary)
-                            .frame(width: 24, height: 24)
-                            .background(Color.white.opacity(0.1))
+                            .frame(width: 22, height: 22)
+                            .background(Color.white.opacity(0.08))
                             .clipShape(RoundedRectangle(cornerRadius: 6))
                     }
                     .buttonStyle(.plain)
@@ -132,13 +132,13 @@ struct HistoryRowView: View {
                 }
 
                 DeleteIconButton(action: onDelete)
+                    .scaleEffect(0.9)
             }
-            .padding(.top, 4)
+            .padding(.top, 2)
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
         .glassRowStyle(isHovering: isHovering || isExpanded)
         .onHover { isHovering = $0 }
+
         .contextMenu {
             if let transcription = recording.transcription {
                 Button {
