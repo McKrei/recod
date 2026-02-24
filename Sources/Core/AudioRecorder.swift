@@ -38,6 +38,12 @@ public class AudioRecorder: NSObject, ObservableObject, @unchecked Sendable {
     private var graphInitialized = false
     private var graphIncludesSystemAudio = false
 
+    // Streaming support
+    private var audioConverter: AVAudioConverter?
+    private var streamFormat16kHz: AVAudioFormat?
+    private var streamBuffer: [Float] = []
+    private let streamBufferQueue = DispatchQueue(label: "com.recod.streamBufferQueue")
+
     // System Audio
     private var scStream: SCStream?
 
@@ -45,8 +51,17 @@ public class AudioRecorder: NSObject, ObservableObject, @unchecked Sendable {
     public var recordSystemAudio: Bool = false
 
     @Published public var isRecording = false
+    public var currentRecordingURL: URL? { audioFile?.url }
 
     // MARK: - Initializer & Pre-warm
+
+    public func getAudioSamples() -> [Float] {
+        return streamBufferQueue.sync { Array(streamBuffer) }
+    }
+
+    public func clearAudioSamples() {
+        streamBufferQueue.sync { streamBuffer.removeAll() }
+    }
 
     public override init() {
         super.init()
@@ -149,6 +164,12 @@ public class AudioRecorder: NSObject, ObservableObject, @unchecked Sendable {
         let tapFormat = mixer.outputFormat(forBus: 0)
         Log("Tap format: \(tapFormat.sampleRate)Hz, \(tapFormat.channelCount)ch")
 
+        if let format16kHz = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 16000, channels: 1, interleaved: false) {
+            self.streamFormat16kHz = format16kHz
+            self.audioConverter = AVAudioConverter(from: tapFormat, to: format16kHz)
+        }
+        self.clearAudioSamples()
+
         // 4. Create File with the native format (NOT 16kHz!)
         let fileURL = getNewRecordingURL()
         let settings: [String: Any] = [
@@ -176,12 +197,17 @@ public class AudioRecorder: NSObject, ObservableObject, @unchecked Sendable {
         }
 
         mixer.installTap(onBus: 0, bufferSize: 4096, format: nil) { [weak self] buffer, time in
-            guard let self = self, let audioFile = self.audioFile else { return }
+            guard let self = self else { return }
             do {
-                try audioFile.write(from: buffer)
+                if let audioFile = self.audioFile {
+                    try audioFile.write(from: buffer)
+                }
             } catch {
                 Log("Write error: \(error)", level: .error)
             }
+
+            // Streaming conversion
+            self.processBufferForStreaming(buffer)
         }
         tapInstalled = true
 
@@ -225,6 +251,44 @@ public class AudioRecorder: NSObject, ObservableObject, @unchecked Sendable {
     }
 
     // MARK: - Private Helpers
+
+    private func processBufferForStreaming(_ buffer: AVAudioPCMBuffer) {
+        guard let converter = audioConverter, let format16kHz = streamFormat16kHz else { return }
+
+        // Calculate max capacity for converted buffer
+        let capacity = AVAudioFrameCount(Double(buffer.frameLength) * (format16kHz.sampleRate / buffer.format.sampleRate)) + 4096
+        guard capacity > 0, let outputBuffer = AVAudioPCMBuffer(pcmFormat: format16kHz, frameCapacity: capacity) else { return }
+
+        var error: NSError? = nil
+        final class ProviderState: @unchecked Sendable {
+            var hasProvidedData = false
+        }
+        let state = ProviderState()
+
+        let inputBlock: AVAudioConverterInputBlock = { inNumPackets, outStatus in
+            if state.hasProvidedData {
+                outStatus.pointee = .noDataNow
+                return nil
+            }
+            state.hasProvidedData = true
+            outStatus.pointee = .haveData
+            return buffer
+        }
+
+        converter.convert(to: outputBuffer, error: &error, withInputFrom: inputBlock)
+
+        if error == nil, let channelData = outputBuffer.floatChannelData {
+            let frameLength = Int(outputBuffer.frameLength)
+            if frameLength > 0 {
+                let bufferPointer = UnsafeBufferPointer<Float>(start: channelData[0], count: frameLength)
+                let samples = Array(bufferPointer)
+
+                streamBufferQueue.async {
+                    self.streamBuffer.append(contentsOf: samples)
+                }
+            }
+        }
+    }
 
     private func teardownGraph() {
         guard graphInitialized else { return }

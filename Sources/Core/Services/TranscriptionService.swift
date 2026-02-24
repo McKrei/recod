@@ -7,6 +7,7 @@ final class TranscriptionService {
     static let shared = TranscriptionService()
 
     private var whisperKit: WhisperKit?
+    public var activeWhisperKit: WhisperKit? { return whisperKit }
     private var currentModelURL: URL?
 
     private init() {}

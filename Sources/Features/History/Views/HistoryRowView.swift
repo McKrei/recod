@@ -44,6 +44,33 @@ struct HistoryRowView: View {
                             Text("Transcribing...")
                                 .foregroundStyle(.secondary)
                         }
+                    case .streamingTranscription:
+                        VStack(alignment: .leading, spacing: 6) {
+                            HStack(spacing: 8) {
+                                Circle()
+                                    .fill(Color.red)
+                                    .frame(width: 8, height: 8)
+                                Text("Recording & Transcribing...")
+                                    .foregroundStyle(.red)
+                                    .font(.caption.bold())
+                            }
+                            if let liveText = recording.liveTranscription, !liveText.isEmpty {
+                                Text(liveText)
+                                    .foregroundStyle(.primary)
+                                    .lineLimit(isExpanded ? nil : 2)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .contentShape(Rectangle())
+                                    .onTapGesture {
+                                        withAnimation(.spring(duration: 0.3)) {
+                                            isExpanded.toggle()
+                                        }
+                                    }
+                            } else {
+                                Text("Listening...")
+                                    .italic()
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
                     case .completed:
                         if let transcription = recording.transcription, !transcription.isEmpty {
                             VStack(alignment: .leading, spacing: 6) {
@@ -108,9 +135,9 @@ struct HistoryRowView: View {
 
             // Actions Column
             VStack(spacing: 6) {
-                if let transcription = recording.transcription, !transcription.isEmpty {
+                if (recording.transcriptionStatus == .completed || recording.transcriptionStatus == .streamingTranscription), let text = recording.transcription ?? recording.liveTranscription, !text.isEmpty {
                     Button {
-                        ClipboardService.shared.copyToClipboard(transcription)
+                        ClipboardService.shared.copyToClipboard(text)
                         withAnimation {
                             showCopyFeedback = true
                         }

@@ -35,6 +35,7 @@ class AppState: ObservableObject {
 
     private let audioRecorder = AudioRecorder()
     private var cancellables = Set<AnyCancellable>()
+    private var streamingRecording: Recording?
 
     init() {
         setupHotKey()
@@ -91,6 +92,27 @@ class AppState: ObservableObject {
 
                 try await audioRecorder.startRecording()
                 self.isOverlayVisible = true
+
+                if let url = audioRecorder.currentRecordingURL, let modelContext = modelContext {
+                    let recording = Recording(
+                        transcriptionStatus: .streamingTranscription,
+                        filename: url.lastPathComponent
+                    )
+                    modelContext.insert(recording)
+                    try? modelContext.save()
+
+                    self.streamingRecording = recording
+
+                    if let modelId = whisperModelManager.selectedModelId,
+                       let modelURL = whisperModelManager.getModelURL(for: modelId) {
+                        StreamingTranscriptionService.shared.startStreaming(
+                            recording: recording,
+                            audioRecorder: audioRecorder,
+                            modelContext: modelContext,
+                            modelURL: modelURL
+                        )
+                    }
+                }
             } catch {
                 await FileLogger.shared.log("Failed to start recording: \(error)", level: .error)
             }
@@ -99,6 +121,8 @@ class AppState: ObservableObject {
 
     func stopRecording() {
         Task {
+            StreamingTranscriptionService.shared.stopStreaming()
+
             if let url = await audioRecorder.stopRecording() {
                 if let modelId = whisperModelManager.selectedModelId,
                    whisperModelManager.getModelURL(for: modelId) != nil {
@@ -126,16 +150,22 @@ class AppState: ObservableObject {
             let duration = try await asset.load(.duration).seconds
             let filename = url.lastPathComponent
 
-            let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
-            let creationDate = attributes[.creationDate] as? Date ?? Date()
+            let recording: Recording
+            if let existing = self.streamingRecording, existing.filename == filename {
+                recording = existing
+                recording.duration = duration
+                self.streamingRecording = nil
+            } else {
+                let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
+                let creationDate = attributes[.creationDate] as? Date ?? Date()
+                recording = Recording(
+                    createdAt: creationDate,
+                    duration: duration,
+                    filename: filename
+                )
+                modelContext.insert(recording)
+            }
 
-            let recording = Recording(
-                createdAt: creationDate,
-                duration: duration,
-                filename: filename
-            )
-
-            modelContext.insert(recording)
             try modelContext.save()
 
             await FileLogger.shared.log("Saved new recording: \(filename)")

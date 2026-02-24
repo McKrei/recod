@@ -5,6 +5,7 @@ import SwiftData
 final class Recording {
     enum TranscriptionStatus: String, Codable {
         case pending
+        case streamingTranscription
         case transcribing
         case completed
         case failed
@@ -14,6 +15,7 @@ final class Recording {
     var createdAt: Date
     var duration: TimeInterval
     var transcription: String?
+    var liveTranscription: String?
     var transcriptionStatus: TranscriptionStatus?
     var filename: String
     var isFileDeleted: Bool = false
@@ -25,6 +27,7 @@ final class Recording {
         createdAt: Date = .now,
         duration: TimeInterval = 0,
         transcription: String? = nil,
+        liveTranscription: String? = nil,
         transcriptionStatus: TranscriptionStatus? = .pending,
         filename: String,
         isFileDeleted: Bool = false,
@@ -34,6 +37,7 @@ final class Recording {
         self.createdAt = createdAt
         self.duration = duration
         self.transcription = transcription
+        self.liveTranscription = liveTranscription
         self.transcriptionStatus = transcriptionStatus
         self.filename = filename
         self.isFileDeleted = isFileDeleted
