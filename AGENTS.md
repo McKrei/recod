@@ -123,8 +123,8 @@ Resources/       # Assets, Strings, Plists
 ## 9. Audio Recording Format
 - Recording uses `AVAudioEngine` with a tap on `recordingMixer` (format: `nil` = native HW rate).
 - Output is a WAV file in the native hardware format (typically 48kHz Stereo, 16-bit PCM).
-- WhisperKit handles sample rate conversion during transcription.
-- **DO NOT** attempt to force 16kHz in the audio graph or tap format — this causes fatal crashes.
+- **Streaming Buffer:** Concurrently with writing to the WAV file, the tap converts the `AVAudioPCMBuffer` to 16kHz Mono Float format using `AVAudioConverter` and appends it to an in-memory thread-safe buffer (`streamBuffer`).
+- **DO NOT** attempt to force 16kHz in the audio graph or tap format — this causes fatal crashes. Conversion must happen *after* the tap.
 
 ## 10. Global Hotkeys System
 - **Engine:** Carbon API (`RegisterEventHotKey`/`UnregisterEventHotKey`). This is the only way to register truly global hotkeys on macOS.
@@ -235,3 +235,14 @@ When adding a new Settings Page or Feature View:
 - **Mandatory Cleaning**: ALWAYS use `TranscriptionService.cleanTranscriptionText(_:)` before displaying or saving transcription text to the database.
 - **Segments**: When processing segments, ensure each segment's text is also cleaned.
 - **Formatting**: Timestamps in UI must follow the `M:SS.S` format (e.g., `0:05.2`). Use `TranscriptionDetailView` for displaying segment lists.
+
+## 16. Streaming Transcription (Live)
+- **Engine**: Custom `StreamingTranscriptionService` (`@MainActor`). We do NOT use WhisperKit's built-in `AudioStreamTranscriber` because it requires its own `audioProcessor` microphone capture, which is incompatible with our custom `AVAudioEngine` graph (required for System Audio capture).
+- **Process**:
+  1. `AudioRecorder` accumulates a 16kHz Mono Float buffer in memory during recording.
+  2. Every ~3 seconds, `StreamingTranscriptionService` checks if there is at least 3 seconds of *new* audio.
+  3. It calls `whisperKit.transcribe(audioArray: ...)` using the accumulated buffer.
+  4. **Performance Optimization:** Uses `clipTimestamps` from the last confirmed segment to avoid re-transcribing the entire buffer from the beginning.
+  5. Segments are confirmed if they are followed by at least two more segments (agreement logic to avoid flickering text).
+- **Data Model Updates**: During recording, a `Recording` object is immediately saved to SwiftData with `transcriptionStatus = .streamingTranscription`. The `liveTranscription` and `segments` arrays are updated reactively on the fly.
+- **Final Pass**: When the recording stops, streaming is cancelled, and `TranscriptionService.transcribe()` runs a full batch transcription on the final saved WAV file to produce the highest accuracy result (replacing the live transcription).
