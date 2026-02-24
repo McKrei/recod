@@ -17,8 +17,14 @@ struct HistoryRowView: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: AppTheme.spacing) {
-            playPauseButton
-                .padding(.top, 2)
+            if recording.transcriptionStatus != .streamingTranscription {
+                playPauseButton
+                    .padding(.top, 2)
+            } else {
+                Color.clear
+                    .frame(width: 26, height: 26)
+                    .padding(.top, 2)
+            }
 
             VStack(alignment: .leading, spacing: 8) {
                 // Header: Date and Duration
@@ -63,8 +69,34 @@ struct HistoryRowView: View {
                                     .onTapGesture {
                                         withAnimation(.spring(duration: 0.3)) {
                                             isExpanded.toggle()
+                                            if !isExpanded { isSegmentsExpanded = false }
                                         }
                                     }
+
+                                // "Show Transcription" Button (only if segments exist AND expanded)
+                                if isExpanded, let segments = recording.segments, !segments.isEmpty {
+                                    Button {
+                                        withAnimation(.spring(duration: 0.4)) {
+                                            isSegmentsExpanded.toggle()
+                                        }
+                                    } label: {
+                                        HStack(spacing: 4) {
+                                            Text(isSegmentsExpanded ? "Hide Transcription" : "Show Transcription")
+                                            Image(systemName: "chevron.down")
+                                                .rotationEffect(.degrees(isSegmentsExpanded ? 180 : 0))
+                                        }
+                                        .font(.caption.bold())
+                                        .foregroundStyle(Color.accentColor)
+                                    }
+                                    .buttonStyle(.plain)
+                                    .padding(.top, 2)
+
+                                    // Detailed Segments List
+                                    if isSegmentsExpanded {
+                                        TranscriptionDetailView(segments: segments)
+                                            .transition(.move(edge: .top).combined(with: .opacity))
+                                    }
+                                }
                             } else {
                                 Text("Listening...")
                                     .italic()
