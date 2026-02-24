@@ -29,6 +29,8 @@ Recod/
 │   └── Features/   # UI: OverlayView, SettingsView, History
 ├── Package.swift   # Конфигурация SwiftPM
 ├── Info.plist      # Метаданные Приложения & Разрешения
+├── AGENTS.md       # Системные инструкции для AI (Source of Truth)
+├── GEMINI.md       # Симлинк на AGENTS.md для Gemini
 └── docs/           # Документация
 ```
 
