@@ -45,6 +45,10 @@ jobs:
               -e "s/>1</>${{ steps.version.outputs.VERSION }}</g" \
               Info.plist > "${APP_BUNDLE}/Contents/Info.plist"
 
+          echo "Signing app bundle..."
+          codesign --force --sign - "${APP_BUNDLE}/Contents/Frameworks/Sparkle.framework"
+          codesign --force --sign - --entitlements Recod.entitlements "${APP_BUNDLE}"
+
       - name: Create ZIP archive
         run: |
           cd build

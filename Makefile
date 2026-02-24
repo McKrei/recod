@@ -45,7 +45,10 @@ app: build-release
 	     -e 's/$$(PRODUCT_BUNDLE_PACKAGE_TYPE)/APPL/g' \
 	     -e 's/$$(MACOSX_DEPLOYMENT_TARGET)/15.0/g' \
 	     Info.plist > $(CONTENTS_DIR)/Info.plist
-	@echo "✅ $(APP_BUNDLE) created successfully!"
+	@echo "Signing $(APP_NAME).app..."
+	@codesign --force --sign - $(CONTENTS_DIR)/Frameworks/Sparkle.framework
+	@codesign --force --sign - --entitlements Recod.entitlements $(APP_BUNDLE)
+	@echo "✅ $(APP_BUNDLE) created and signed successfully!"
 	@echo "You can now drag it into /Applications or run: open $(APP_BUNDLE)"
 
 # Create DMG for easy distribution

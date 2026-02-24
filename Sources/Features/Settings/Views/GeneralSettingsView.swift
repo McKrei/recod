@@ -1,8 +1,10 @@
 import SwiftUI
+import CoreGraphics
 
 struct GeneralSettingsView: View {
     @EnvironmentObject var appState: AppState
     @EnvironmentObject var launchAtLoginService: LaunchAtLoginService
+    @State private var showScreenPermissionAlert = false
 
     var body: some View {
         ScrollView {
@@ -80,7 +82,20 @@ struct GeneralSettingsView: View {
                                     .foregroundStyle(.secondary)
                             }
                             Spacer()
-                            StatusToggle(isOn: $appState.recordSystemAudio)
+                            StatusToggle(isOn: Binding(
+                                get: { appState.recordSystemAudio },
+                                set: { newValue in
+                                    if newValue {
+                                        // Check if screen capture permission is granted
+                                        if !CGPreflightScreenCaptureAccess() {
+                                            // Request permission (opens System Settings)
+                                            CGRequestScreenCaptureAccess()
+                                            showScreenPermissionAlert = true
+                                        }
+                                    }
+                                    appState.recordSystemAudio = newValue
+                                }
+                            ))
                         }
                     }
                     .padding(8)
@@ -106,6 +121,18 @@ struct GeneralSettingsView: View {
                 .groupBoxStyle(GlassGroupBoxStyle())
             }
             .padding(30)
+        }
+        .alert("Screen Recording Permission Required", isPresented: $showScreenPermissionAlert) {
+            Button("Open System Settings") {
+                if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture") {
+                    NSWorkspace.shared.open(url)
+                }
+            }
+            Button("Cancel", role: .cancel) {
+                appState.recordSystemAudio = false
+            }
+        } message: {
+            Text("To record system audio, please enable Screen & System Audio Recording for Recod in System Settings → Privacy & Security.\n\nAfter enabling, restart the app.")
         }
     }
 }
