@@ -28,7 +28,7 @@ public enum AudioRecorderError: Error, LocalizedError {
 public class AudioRecorder: NSObject, ObservableObject, @unchecked Sendable {
     // MARK: - Properties
 
-    private let engine = AVAudioEngine()
+    private var engine: AVAudioEngine?
     private var recordingMixer: AVAudioMixerNode?
     private var micMixer: AVAudioMixerNode?
     private var sysPlayerNode: AVAudioPlayerNode?
@@ -76,13 +76,13 @@ public class AudioRecorder: NSObject, ObservableObject, @unchecked Sendable {
         setupGraph()
         Task {
             do {
-                engine.prepare()
-                try engine.start()
+                engine?.prepare()
+                try engine?.start()
                 Log("AudioRecorder engine pre-warmed for 1s...")
                 try await Task.sleep(nanoseconds: 1_000_000_000)
-                engine.stop()
+                engine?.stop()
                 teardownGraph()
-                Log("AudioRecorder engine stopped after pre-warm (indicator off)")
+                Log("AudioRecorder engine stopped and released after pre-warm")
             } catch {
                 Log("AudioRecorder pre-warm engine start failed: \(error)", level: .error)
                 teardownGraph()
@@ -132,6 +132,8 @@ public class AudioRecorder: NSObject, ObservableObject, @unchecked Sendable {
         }
 
         setupGraph()
+
+        guard let engine = engine else { throw AudioRecorderError.setupFailed }
 
         // 1. Ensure engine is running
         if !engine.isRunning {
@@ -243,8 +245,8 @@ public class AudioRecorder: NSObject, ObservableObject, @unchecked Sendable {
         await MainActor.run { self.isRecording = false }
         Log("Recording stopped")
 
-        // Stop engine to hide the orange dot
-        engine.stop()
+        // Stop engine and fully release graph
+        engine?.stop()
         teardownGraph()
 
         return url
@@ -293,30 +295,33 @@ public class AudioRecorder: NSObject, ObservableObject, @unchecked Sendable {
     private func teardownGraph() {
         guard graphInitialized else { return }
 
-        if let mixer = recordingMixer {
-            engine.disconnectNodeInput(mixer)
-            engine.disconnectNodeOutput(mixer)
-            engine.detach(mixer)
-        }
+        if let engine = engine {
+            if let mixer = recordingMixer {
+                engine.disconnectNodeInput(mixer)
+                engine.disconnectNodeOutput(mixer)
+                engine.detach(mixer)
+            }
 
-        if let mic = micMixer {
-            engine.disconnectNodeInput(mic)
-            engine.disconnectNodeOutput(mic)
-            engine.detach(mic)
-        }
+            if let mic = micMixer {
+                engine.disconnectNodeInput(mic)
+                engine.disconnectNodeOutput(mic)
+                engine.detach(mic)
+            }
 
-        if let player = sysPlayerNode {
-            engine.disconnectNodeInput(player)
-            engine.disconnectNodeOutput(player)
-            engine.detach(player)
-            sysPlayerNode = nil
+            if let player = sysPlayerNode {
+                engine.disconnectNodeInput(player)
+                engine.disconnectNodeOutput(player)
+                engine.detach(player)
+                sysPlayerNode = nil
+            }
         }
 
         recordingMixer = nil
         micMixer = nil
+        engine = nil // Fully release the engine to free the microphone hardware
         graphInitialized = false
         graphIncludesSystemAudio = false
-        Log("AudioRecorder graph torn down")
+        Log("AudioRecorder graph torn down (Engine Released)")
     }
 
     private func setupGraph() {
@@ -324,41 +329,44 @@ public class AudioRecorder: NSObject, ObservableObject, @unchecked Sendable {
 
         Log("Initializing AudioRecorder graph (systemAudio: \(recordSystemAudio))...")
 
+        let newEngine = AVAudioEngine()
+        self.engine = newEngine
+
         let recMixer = AVAudioMixerNode()
         let mMixer = AVAudioMixerNode()
         self.recordingMixer = recMixer
         self.micMixer = mMixer
 
-        let mainMixer = engine.mainMixerNode
+        let mainMixer = newEngine.mainMixerNode
         mainMixer.outputVolume = 0.0
 
-        engine.attach(recMixer)
-        engine.attach(mMixer)
+        newEngine.attach(recMixer)
+        newEngine.attach(mMixer)
 
         // Use native input format — do NOT force 16kHz
-        let inputNode = engine.inputNode
+        let inputNode = newEngine.inputNode
         let inputFormat = inputNode.outputFormat(forBus: 0)
         Log("Hardware input format: \(inputFormat.sampleRate)Hz, \(inputFormat.channelCount)ch")
 
         // Mic → micMixer → recordingMixer
-        engine.connect(inputNode, to: mMixer, format: inputFormat)
+        newEngine.connect(inputNode, to: mMixer, format: inputFormat)
         mMixer.pan = -1.0 // Left channel
-        engine.connect(mMixer, to: recMixer, format: inputFormat)
+        newEngine.connect(mMixer, to: recMixer, format: inputFormat)
 
         // System Audio → recordingMixer (only if enabled)
         if recordSystemAudio {
             if #available(macOS 12.3, *) {
                 let sysFormat = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 48000, channels: 2, interleaved: false)!
                 let player = AVAudioPlayerNode()
-                engine.attach(player)
+                newEngine.attach(player)
                 player.pan = 1.0 // Right channel
-                engine.connect(player, to: recMixer, format: sysFormat)
+                newEngine.connect(player, to: recMixer, format: sysFormat)
                 self.sysPlayerNode = player
             }
         }
 
         // recordingMixer → mainMixer (using input format to keep sample rates consistent)
-        engine.connect(recMixer, to: mainMixer, format: inputFormat)
+        newEngine.connect(recMixer, to: mainMixer, format: inputFormat)
 
         graphInitialized = true
         graphIncludesSystemAudio = recordSystemAudio

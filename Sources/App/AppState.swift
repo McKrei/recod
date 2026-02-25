@@ -25,7 +25,13 @@ class AppState: ObservableObject {
     @Published public var isOverlayVisible = false
     @Published public var overlayStatus: OverlayStatus = .recording
 
-    @AppStorage("recordSystemAudio") public var recordSystemAudio: Bool = false
+    public var recordSystemAudio: Bool {
+        get { UserDefaults.standard.bool(forKey: "recordSystemAudio") }
+        set {
+            self.objectWillChange.send()
+            UserDefaults.standard.set(newValue, forKey: "recordSystemAudio")
+        }
+    }
 
     // Injected by App
     public var modelContext: ModelContext?

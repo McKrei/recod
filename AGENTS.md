@@ -103,20 +103,20 @@ Resources/       # Assets, Strings, Plists
   - Models are stored in `~/Library/Application Support/Recod/Models/models/argmaxinc/whisperkit-coreml`.
 
 ### Аудио (AudioRecorder)
-- **Динамический граф**: `AVAudioEngine` узлы (`recordingMixer`, `micMixer`, `sysPlayerNode`) создаются заново при каждой записи через `setupGraph()` и полностью разбираются через `teardownGraph()` после каждой остановки.
 - **Условный граф**: `sysPlayerNode` (системный звук) подключается к графу **только если** `recordSystemAudio = true`. При выключенном ползунке — граф только с микрофоном, **без обращения к ScreenCaptureKit**.
 - **Нативный формат записи (КРИТИЧНО)**:
   > **НЕ ИСПОЛЬЗОВАТЬ 16kHz!** macOS `AVAudioEngine.installTap()` **строго требует** совпадения sample rate с аппаратным входом. При несовпадении — фатальный краш: `format.sampleRate == inputHWFormat.sampleRate`.
   - Tap устанавливается с `format: nil` (нативный формат ноды).
   - WAV-файл создаётся с `mixer.outputFormat.sampleRate` (обычно 48kHz).
   - WhisperKit самостоятельно конвертирует при транскрипции.
+- **Освобождение микрофона (Bluetooth HFP Fix)**: `AVAudioEngine` создается заново при каждом `setupGraph()` и **ПОЛНОСТЬЮ уничтожается** (`engine = nil`) в `teardownGraph()`. Это необходимо, чтобы macOS отпустила микрофон и вернула Bluetooth-наушники (например, AirPods) из монофонического `SCO/HFP` профиля обратно в качественный `A2DP` стерео-профиль в фоновом режиме.
 - **Двухканальная запись** (когда включён системный звук):
   - Канал 0 (Bus 0): Микрофон (panned hard Left).
   - Канал 1 (Bus 1): Системный звук (panned hard Right).
 - **SCStream (ScreenCaptureKit)**: Используется для системного звука. Требует macOS 12.3+.
   - Перед использованием проверяется `CGPreflightScreenCaptureAccess()`.
   - При отсутствии разрешения — выбрасывается `AudioRecorderError.screenCapturePermissionDenied`.
-- **Pre-warming (Прогрев)**: При запуске вызывается `prewarm()` с принудительным `recordSystemAudio = false`, запускает engine на 1 секунду, затем `engine.stop()` + `teardownGraph()`. Граф полностью очищается.
+- **Pre-warming (Прогрев)**: При запуске вызывается `prewarm()` с принудительным `recordSystemAudio = false`, запускает engine на 1 секунду, затем `engine.stop()` + `teardownGraph()`. Граф полностью очищается и движок удаляется из памяти.
 - **Индикатор микрофона**: `engine.stop()` вызывается после каждой записи — гасит оранжевую точку.
 - **Code Signing**: `.app` бандл подписывается ad-hoc через `codesign` с `Recod.entitlements` (entitlement: `com.apple.security.device.audio-input`).
 
@@ -126,7 +126,21 @@ Resources/       # Assets, Strings, Plists
 - **Streaming Buffer:** Concurrently with writing to the WAV file, the tap converts the `AVAudioPCMBuffer` to 16kHz Mono Float format using `AVAudioConverter` and appends it to an in-memory thread-safe buffer (`streamBuffer`).
 - **DO NOT** attempt to force 16kHz in the audio graph or tap format — this causes fatal crashes. Conversion must happen *after* the tap.
 
-## 10. Global Hotkeys System
+## 10. SwiftUI AppStorage State Management (CRITICAL)
+> **WARNING:** Do not use `@AppStorage` inside `@Observable` or `ObservableObject` classes (like `AppState`), especially if the property is programmatically changed or bound to UI toggles rapidly.
+- **Bug:** SwiftUI sometimes drops updates from `@AppStorage` within `ObservableObject`, causing the UI to become desynchronized from the actual value in `UserDefaults`.
+- **Solution:** Use explicit `UserDefaults` getters/setters with `self.objectWillChange.send()`.
+  ```swift
+  public var recordSystemAudio: Bool {
+      get { UserDefaults.standard.bool(forKey: "recordSystemAudio") }
+      set {
+          self.objectWillChange.send()
+          UserDefaults.standard.set(newValue, forKey: "recordSystemAudio")
+      }
+  }
+  ```
+
+## 11. Global Hotkeys System
 - **Engine:** Carbon API (`RegisterEventHotKey`/`UnregisterEventHotKey`). This is the only way to register truly global hotkeys on macOS.
 - **Architecture:**
   - `HotKeyShortcut` — `Codable`/`Sendable` struct storing `keyCode` (UInt32, Carbon virtual key) and `modifiers` (UInt32, Carbon modifier flags: `cmdKey`, `shiftKey`, `optionKey`, `controlKey`).
