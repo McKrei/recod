@@ -56,7 +56,16 @@ public class AudioRecorder: NSObject, ObservableObject, @unchecked Sendable {
     // MARK: - Initializer & Pre-warm
 
     public func getAudioSamples() -> [Float] {
-        return streamBufferQueue.sync { Array(streamBuffer) }
+        streamBufferQueue.sync { streamBuffer }
+    }
+
+    /// Возвращает аудиосэмплы, добавленные после указанного индекса.
+    /// Полезно для стримингового распознавания без копирования всего буфера каждый раз.
+    public func getNewAudioSamples(from index: Int) -> [Float] {
+        streamBufferQueue.sync {
+            guard index < streamBuffer.count else { return [] }
+            return Array(streamBuffer[index...])
+        }
     }
 
     public func clearAudioSamples() {
@@ -117,7 +126,6 @@ public class AudioRecorder: NSObject, ObservableObject, @unchecked Sendable {
         let granted = await requestPermission()
         guard granted else { throw AudioRecorderError.permissionDenied }
 
-        // If system audio is requested, verify screen capture permission first
         if recordSystemAudio {
             guard hasScreenCapturePermission() else {
                 Log("Screen capture permission denied — cannot record system audio", level: .error)
@@ -125,7 +133,6 @@ public class AudioRecorder: NSObject, ObservableObject, @unchecked Sendable {
             }
         }
 
-        // Rebuild graph if system audio config changed since last setup
         if graphInitialized && graphIncludesSystemAudio != recordSystemAudio {
             Log("System audio config changed, rebuilding graph...")
             teardownGraph()
@@ -133,36 +140,12 @@ public class AudioRecorder: NSObject, ObservableObject, @unchecked Sendable {
 
         setupGraph()
 
-        guard let engine = engine else { throw AudioRecorderError.setupFailed }
-
-        // 1. Ensure engine is running
-        if !engine.isRunning {
-            do {
-                engine.prepare()
-                try engine.start()
-                try? await Task.sleep(nanoseconds: 200_000_000)
-            } catch {
-                Log("Engine start failed: \(error)", level: .error)
-                throw AudioRecorderError.setupFailed
-            }
-        }
-
-        // 2. Setup System Audio Capture if needed
-        if recordSystemAudio {
-            if #available(macOS 12.3, *) {
-                if scStream == nil {
-                    try await startSystemAudioCapture()
-                }
-            }
-            sysPlayerNode?.play()
-        }
-
-        // 3. Get the ACTUAL output format of the recording mixer AFTER engine is running.
-        // This MUST match the hardware sample rate or installTap will crash.
-        guard let mixer = recordingMixer else {
+        guard let engine = engine, let mixer = recordingMixer else {
             throw AudioRecorderError.setupFailed
         }
 
+        engine.prepare()
+        
         let tapFormat = mixer.outputFormat(forBus: 0)
         Log("Tap format: \(tapFormat.sampleRate)Hz, \(tapFormat.channelCount)ch")
 
@@ -172,7 +155,6 @@ public class AudioRecorder: NSObject, ObservableObject, @unchecked Sendable {
         }
         self.clearAudioSamples()
 
-        // 4. Create File with the native format (NOT 16kHz!)
         let fileURL = getNewRecordingURL()
         let settings: [String: Any] = [
             AVFormatIDKey: Int(kAudioFormatLinearPCM),
@@ -191,8 +173,6 @@ public class AudioRecorder: NSObject, ObservableObject, @unchecked Sendable {
             throw AudioRecorderError.setupFailed
         }
 
-        // 5. Install Tap — use nil format to match the node's native output format.
-        // This avoids the fatal "format.sampleRate == inputHWFormat.sampleRate" crash.
         if tapInstalled {
             mixer.removeTap(onBus: 0)
             tapInstalled = false
@@ -207,11 +187,25 @@ public class AudioRecorder: NSObject, ObservableObject, @unchecked Sendable {
             } catch {
                 Log("Write error: \(error)", level: .error)
             }
-
-            // Streaming conversion
             self.processBufferForStreaming(buffer)
         }
         tapInstalled = true
+
+        do {
+            try engine.start()
+        } catch {
+            Log("Engine start failed: \(error)", level: .error)
+            throw AudioRecorderError.setupFailed
+        }
+
+        if recordSystemAudio {
+            if #available(macOS 12.3, *) {
+                if scStream == nil {
+                    try await startSystemAudioCapture()
+                }
+            }
+            sysPlayerNode?.play()
+        }
 
         await MainActor.run { self.isRecording = true }
         Log("Recording started (System Audio: \(recordSystemAudio))")

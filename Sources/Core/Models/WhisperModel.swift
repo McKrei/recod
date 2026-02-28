@@ -39,6 +39,10 @@ enum WhisperModelType: String, CaseIterable, Identifiable, Codable, Sendable {
         case .largeV3Turbo: return "900 MB"
         }
     }
+    
+    var languages: String {
+        "99 languages (en, ru, de, fr, es, it, zh, ja...)"
+    }
 }
 
 struct WhisperModel: Identifiable, Equatable, Sendable {

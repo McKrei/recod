@@ -19,6 +19,7 @@ final class Recording {
     var transcriptionStatus: TranscriptionStatus?
     var filename: String
     var isFileDeleted: Bool = false
+    var transcriptionEngine: String?
 
     @Attribute(.externalStorage) var segments: [TranscriptionSegment]?
 
@@ -31,6 +32,7 @@ final class Recording {
         transcriptionStatus: TranscriptionStatus? = .pending,
         filename: String,
         isFileDeleted: Bool = false,
+        transcriptionEngine: String? = nil,
         segments: [TranscriptionSegment]? = nil
     ) {
         self.id = id
@@ -41,6 +43,7 @@ final class Recording {
         self.transcriptionStatus = transcriptionStatus
         self.filename = filename
         self.isFileDeleted = isFileDeleted
+        self.transcriptionEngine = transcriptionEngine
         self.segments = segments
     }
 
