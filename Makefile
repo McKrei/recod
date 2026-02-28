@@ -1,4 +1,4 @@
-.PHONY: build run clean app dmg release
+.PHONY: build run clean app dmg release extract-deps
 
 APP_NAME = Recod
 BUILD_DIR = build
@@ -6,16 +6,26 @@ APP_BUNDLE = $(BUILD_DIR)/$(APP_NAME).app
 CONTENTS_DIR = $(APP_BUNDLE)/Contents
 MACOS_DIR = $(CONTENTS_DIR)/MacOS
 RESOURCES_DIR = $(CONTENTS_DIR)/Resources
+XCFRAMEWORK_DIR = Packages/SherpaOnnx/sherpa-onnx.xcframework
+XCFRAMEWORK_ZIP = Packages/SherpaOnnx/sherpa-onnx.xcframework.zip
 
 # Default target
 all: run
 
+# Extract heavy dependencies if missing
+extract-deps:
+	@if [ ! -d "$(XCFRAMEWORK_DIR)" ] && [ -f "$(XCFRAMEWORK_ZIP)" ]; then \
+		echo "📦 Extracting sherpa-onnx.xcframework..."; \
+		unzip -q "$(XCFRAMEWORK_ZIP)" -d Packages/SherpaOnnx/; \
+		echo "✅ Extraction complete."; \
+	fi
+
 # Build the project (debug)
-build:
+build: extract-deps
 	swift build
 
 # Build the project (release)
-build-release:
+build-release: extract-deps
 	swift build -c release
 
 # Build and run the application
@@ -66,6 +76,7 @@ clean:
 	swift package clean
 	rm -rf .build
 	rm -rf $(BUILD_DIR)
+	rm -rf $(XCFRAMEWORK_DIR)
 
 # Remove all downloaded models and logs to start fresh
 reset: kill
