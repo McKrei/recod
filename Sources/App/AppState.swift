@@ -26,6 +26,10 @@ class AppState: ObservableObject {
     @Published public var overlayStatus: OverlayStatus = .recording
     @Published public var overlayAudioLevel: Float = 0
 
+    /// Guards against race conditions when hotkey is pressed rapidly.
+    /// Prevents double-start / double-stop of the recording pipeline.
+    private var isTransitioning = false
+
     public var saveToClipboard: Bool {
         get {
             if UserDefaults.standard.object(forKey: "saveToClipboard") == nil {
@@ -116,7 +120,13 @@ class AppState: ObservableObject {
     }
 
     func startRecording() {
+        guard !isTransitioning && !isRecording else {
+            Task { await FileLogger.shared.log("startRecording() blocked: isTransitioning=\(isTransitioning), isRecording=\(isRecording)", level: .warning) }
+            return
+        }
+        isTransitioning = true
         Task {
+            defer { Task { @MainActor in self.isTransitioning = false } }
             // Verify that the selected engine has a downloaded model before recording
             let engineReady: Bool
             switch selectedEngine {
@@ -212,7 +222,13 @@ class AppState: ObservableObject {
     }
 
     func stopRecording() {
+        guard !isTransitioning && isRecording else {
+            Task { await FileLogger.shared.log("stopRecording() blocked: isTransitioning=\(isTransitioning), isRecording=\(isRecording)", level: .warning) }
+            return
+        }
+        isTransitioning = true
         Task {
+            defer { Task { @MainActor in self.isTransitioning = false } }
             // Switch UI state immediately so the recording mic/ripple disappears without pause.
             overlayAudioLevel = 0
             overlayStatus = .transcribing

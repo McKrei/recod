@@ -50,6 +50,7 @@ public class AudioRecorder: NSObject, ObservableObject, @unchecked Sendable {
     private var tapInstalled = false
     private var graphInitialized = false
     private var graphIncludesSystemAudio = false
+    private var tapBufferCount: Int = 0
 
     // Streaming support
     private var audioConverter: AVAudioConverter?
@@ -198,8 +199,19 @@ public class AudioRecorder: NSObject, ObservableObject, @unchecked Sendable {
             tapInstalled = false
         }
 
+        tapBufferCount = 0
         mixer.installTap(onBus: 0, bufferSize: 4096, format: nil) { [weak self] buffer, time in
             guard let self = self else { return }
+
+            // Diagnostic: log first buffer to confirm tap is receiving data
+            let count = self.tapBufferCount
+            if count == 0 {
+                Log("Tap FIRST buffer: \(buffer.frameLength) frames @ \(buffer.format.sampleRate)Hz \(buffer.format.channelCount)ch")
+            } else if count == 10 {
+                Log("Tap alive: 10 buffers received")
+            }
+            self.tapBufferCount += 1
+
             do {
                 if let audioFile = self.audioFile {
                     try audioFile.write(from: buffer)
@@ -443,29 +455,38 @@ public class AudioRecorder: NSObject, ObservableObject, @unchecked Sendable {
         newEngine.attach(recMixer)
         newEngine.attach(mMixer)
 
-        // Use native input format — do NOT force 16kHz
+        // Use native input format — do NOT force 16kHz.
+        // macOS AVAudioEngine strictly requires tap format == hardware input sample rate.
         let inputNode = newEngine.inputNode
         let inputFormat = inputNode.outputFormat(forBus: 0)
         Log("Hardware input format: \(inputFormat.sampleRate)Hz, \(inputFormat.channelCount)ch")
 
-        // Mic → micMixer → recordingMixer
+        // Mic → micMixer → recordingMixer (all connections use inputFormat)
         newEngine.connect(inputNode, to: mMixer, format: inputFormat)
-        mMixer.pan = -1.0 // Left channel
+        // Pan ONLY when input is stereo. Mono devices (AirPods HFP at 16kHz) stall
+        // silently when .pan is set — the tap receives zero buffers.
+        if inputFormat.channelCount >= 2 {
+            mMixer.pan = -1.0 // Left channel
+        }
         newEngine.connect(mMixer, to: recMixer, format: inputFormat)
 
         // System Audio → recordingMixer (only if enabled)
         if recordSystemAudio {
             if #available(macOS 12.3, *) {
-                let sysFormat = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 48000, channels: 2, interleaved: false)!
+                let sysFormat = AVAudioFormat(commonFormat: .pcmFormatFloat32,
+                                              sampleRate: 48000, channels: 2, interleaved: false)!
                 let player = AVAudioPlayerNode()
                 newEngine.attach(player)
-                player.pan = 1.0 // Right channel
+                if inputFormat.channelCount >= 2 {
+                    player.pan = 1.0 // Right channel
+                }
                 newEngine.connect(player, to: recMixer, format: sysFormat)
                 self.sysPlayerNode = player
             }
         }
 
-        // recordingMixer → mainMixer (using input format to keep sample rates consistent)
+        // recordingMixer → mainMixer using inputFormat.
+        // This matches the original working graph from commit e565668.
         newEngine.connect(recMixer, to: mainMixer, format: inputFormat)
 
         graphInitialized = true
