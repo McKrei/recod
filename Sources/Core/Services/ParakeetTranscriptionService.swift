@@ -87,34 +87,10 @@ final class ParakeetTranscriptionService {
         var hotwordsPath = ""
         var avgScore: Float = 1.5
         
-        if !rules.isEmpty {
-            let tempDir = FileManager.default.temporaryDirectory
-            let hotwordsURL = tempDir.appendingPathComponent("parakeet_hotwords.txt")
-            
-            var lines: [String] = []
-            var totalWeight: Float = 0
-            var count: Float = 0
-            
-            for rule in rules {
-                let text = rule.textToReplace.trimmingCharacters(in: .whitespacesAndNewlines)
-                if !text.isEmpty {
-                    lines.append("\(text) \(rule.weight)")
-                    totalWeight += rule.weight
-                    count += 1
-                }
-            }
-            
-            if !lines.isEmpty {
-                do {
-                    let content = lines.joined(separator: "\n")
-                    try content.write(to: hotwordsURL, atomically: true, encoding: .utf8)
-                    hotwordsPath = hotwordsURL.path
-                    avgScore = totalWeight / count
-                    await FileLogger.shared.log("Compiled \(lines.count) hotwords into \(hotwordsPath) (avg weight: \(avgScore))")
-                } catch {
-                    await FileLogger.shared.log("Failed to write hotwords file: \(error)", level: .error)
-                }
-            }
+        if let result = DictionaryBiasingCompiler.compileParakeetHotwordsFile(from: rules) {
+            hotwordsPath = result.path
+            avgScore = result.avgScore
+            await FileLogger.shared.log("Compiled hotwords into \(hotwordsPath) (avg weight: \(avgScore))")
         }
 
         var config = sherpaOnnxOfflineRecognizerConfig(

@@ -71,31 +71,7 @@ final class TranscriptionService {
 
         // Context Biasing (Word Boosting) for WhisperKit
         if !rules.isEmpty {
-            var promptTokens: [Int] = []
-            
-            for rule in rules {
-                // WhisperKit prefers words starting with a space to match mid-sentence tokens
-                let words = [" " + rule.textToReplace, rule.textToReplace]
-                for word in words {
-                    if let tokenizer = kit.tokenizer {
-                        let encoded = tokenizer.encode(text: word)
-                        if !encoded.isEmpty {
-                            // We repeat the token sequence based on its weight to artificially "boost" it
-                            // Whisper promptTokens limit is around 224, so we need to be careful
-                            let repeatCount = Int(max(1.0, rule.weight))
-                            for _ in 0..<repeatCount {
-                                promptTokens.append(contentsOf: encoded)
-                            }
-                        }
-                    }
-                }
-            }
-            
-            // Limit to max 224 tokens (Whisper's prompt limit)
-            if promptTokens.count > 224 {
-                promptTokens = Array(promptTokens.suffix(224))
-            }
-            
+            let promptTokens = DictionaryBiasingCompiler.compileWhisperPromptTokens(from: rules, tokenizer: kit.tokenizer)
             if !promptTokens.isEmpty {
                 options.promptTokens = promptTokens
                 await FileLogger.shared.log("WhisperKit Context Biasing: Injected \(promptTokens.count) tokens from user dictionary.")
