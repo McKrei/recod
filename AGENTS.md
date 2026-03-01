@@ -244,6 +244,17 @@ When adding a new Settings Page or Feature View:
 - **Ghost/Icon:** `IconButton(systemName: "...", action: ...)`
 - **Standard:** `Button("Label") { ... }.buttonStyle(.bordered)` (Gray, not Blue).
 
+## 14.1 Overlay Animation Standards (MANDATORY)
+- **Source of Truth:** `Sources/DesignSystem/AppTheme.swift` (`// MARK: - Overlay`).
+- **Recording state (`.recording`):**
+  - No glass background circle. Render only mic core + reactive ripple layers.
+  - Ripple logic must be event-driven (burst on speech intensity rise), not continuous fast pulse loops.
+  - Loud speech may add secondary delayed burst; silence should not spam waves.
+- **Transcribing state (`.transcribing`):** use red orbital loader (center dot + rotating dots), no glass background.
+- **Success/Error states:** keep icon-only style (no background circle) with concise transition.
+- **Stop UX requirement:** on stop, UI must switch to transcribing immediately (no visual pause with recording mic still visible).
+- **No magic numbers in OverlayView:** thresholds/speeds/sizes/curve powers must be stored in `AppTheme`.
+
 ## 15. WhisperKit Transcription Standards
 - **Special Tokens**: WhisperKit output often contains special tokens like `<|startoftranscript|>`, `<|en|>`, `<|transcribe|>`.
 - **Mandatory Cleaning**: ALWAYS use `TranscriptionService.cleanTranscriptionText(_:)` before displaying or saving transcription text to the database.

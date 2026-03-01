@@ -2,6 +2,7 @@
 import AppKit
 import ScreenCaptureKit
 import CoreMedia
+import Accelerate
 
 public enum AudioRecorderError: Error, LocalizedError {
     case permissionDenied
@@ -28,6 +29,18 @@ public enum AudioRecorderError: Error, LocalizedError {
 public class AudioRecorder: NSObject, ObservableObject, @unchecked Sendable {
     // MARK: - Properties
 
+    private enum LevelMeterConfig {
+        static let floorDB: Float = -52
+        static let ceilingDB: Float = 0
+        static let attack: Float = 0.42
+        static let release: Float = 0.14
+        static let minimumVisibleLevel: Float = 0.01
+        static let silenceRMS: Float = 0.00002
+        static let epsilonRMS: Float = 0.000001
+        static let shapingPower: Float = 1.18
+        static let publishIntervalNanoseconds: UInt64 = 50_000_000
+    }
+
     private var engine: AVAudioEngine?
     private var recordingMixer: AVAudioMixerNode?
     private var micMixer: AVAudioMixerNode?
@@ -44,6 +57,12 @@ public class AudioRecorder: NSObject, ObservableObject, @unchecked Sendable {
     private var streamBuffer: [Float] = []
     private let streamBufferQueue = DispatchQueue(label: "com.recod.streamBufferQueue")
 
+    // UI level signal
+    private let audioLevelQueue = DispatchQueue(label: "com.recod.audioLevelQueue")
+    private var latestRawAudioLevel: Float = 0
+    private var smoothedAudioLevel: Float = 0
+    private var audioLevelPublisherTask: Task<Void, Never>?
+
     // System Audio
     private var scStream: SCStream?
 
@@ -51,6 +70,7 @@ public class AudioRecorder: NSObject, ObservableObject, @unchecked Sendable {
     public var recordSystemAudio: Bool = false
 
     @Published public var isRecording = false
+    @Published public private(set) var audioLevel: Float = 0
     public var currentRecordingURL: URL? { audioFile?.url }
 
     // MARK: - Initializer & Pre-warm
@@ -188,6 +208,7 @@ public class AudioRecorder: NSObject, ObservableObject, @unchecked Sendable {
                 Log("Write error: \(error)", level: .error)
             }
             self.processBufferForStreaming(buffer)
+            self.processBufferForLevel(buffer)
         }
         tapInstalled = true
 
@@ -206,6 +227,8 @@ public class AudioRecorder: NSObject, ObservableObject, @unchecked Sendable {
             }
             sysPlayerNode?.play()
         }
+
+        startAudioLevelPublishing()
 
         await MainActor.run { self.isRecording = true }
         Log("Recording started (System Audio: \(recordSystemAudio))")
@@ -235,6 +258,8 @@ public class AudioRecorder: NSObject, ObservableObject, @unchecked Sendable {
 
         let url = audioFile?.url
         audioFile = nil
+
+        stopAudioLevelPublishing(resetToZero: true)
 
         await MainActor.run { self.isRecording = false }
         Log("Recording stopped")
@@ -286,8 +311,89 @@ public class AudioRecorder: NSObject, ObservableObject, @unchecked Sendable {
         }
     }
 
+    private func processBufferForLevel(_ buffer: AVAudioPCMBuffer) {
+        let frameLength = Int(buffer.frameLength)
+        guard frameLength > 0, let channelData = buffer.floatChannelData else { return }
+
+        let channelCount = Int(buffer.format.channelCount)
+        guard channelCount > 0 else { return }
+
+        var channelZeroRMS: Float = 0
+        vDSP_rmsqv(channelData[0], 1, &channelZeroRMS, vDSP_Length(frameLength))
+
+        let rms: Float
+        if channelZeroRMS > LevelMeterConfig.silenceRMS || channelCount == 1 {
+            rms = channelZeroRMS
+        } else {
+            var sum: Float = 0
+            for channel in 0 ..< channelCount {
+                var value: Float = 0
+                vDSP_rmsqv(channelData[channel], 1, &value, vDSP_Length(frameLength))
+                sum += value
+            }
+            rms = sum / Float(channelCount)
+        }
+
+        let safeRMS = max(rms, LevelMeterConfig.epsilonRMS)
+        let db = 20 * log10f(safeRMS)
+        let clampedDB = min(max(db, LevelMeterConfig.floorDB), LevelMeterConfig.ceilingDB)
+        let normalized = (clampedDB - LevelMeterConfig.floorDB) / (LevelMeterConfig.ceilingDB - LevelMeterConfig.floorDB)
+        let shaped = powf(min(max(normalized, 0), 1), LevelMeterConfig.shapingPower)
+
+        audioLevelQueue.async { [weak self] in
+            self?.latestRawAudioLevel = shaped
+        }
+    }
+
+    private func startAudioLevelPublishing() {
+        stopAudioLevelPublishing(resetToZero: false)
+
+        audioLevelQueue.sync {
+            self.latestRawAudioLevel = 0
+            self.smoothedAudioLevel = 0
+        }
+
+        audioLevelPublisherTask = Task.detached(priority: .utility) { [weak self] in
+            guard let self = self else { return }
+
+            while !Task.isCancelled {
+                let publishedValue = self.audioLevelQueue.sync { () -> Float in
+                    let target = self.latestRawAudioLevel
+                    let coefficient = target > self.smoothedAudioLevel ? LevelMeterConfig.attack : LevelMeterConfig.release
+                    self.smoothedAudioLevel += (target - self.smoothedAudioLevel) * coefficient
+                    let clamped = min(max(self.smoothedAudioLevel, 0), 1)
+                    return clamped < LevelMeterConfig.minimumVisibleLevel ? 0 : clamped
+                }
+
+                await MainActor.run {
+                    self.audioLevel = publishedValue
+                }
+
+                try? await Task.sleep(nanoseconds: LevelMeterConfig.publishIntervalNanoseconds)
+            }
+        }
+    }
+
+    private func stopAudioLevelPublishing(resetToZero: Bool) {
+        audioLevelPublisherTask?.cancel()
+        audioLevelPublisherTask = nil
+
+        audioLevelQueue.sync {
+            self.latestRawAudioLevel = 0
+            self.smoothedAudioLevel = 0
+        }
+
+        if resetToZero {
+            Task { @MainActor [weak self] in
+                self?.audioLevel = 0
+            }
+        }
+    }
+
     private func teardownGraph() {
         guard graphInitialized else { return }
+
+        stopAudioLevelPublishing(resetToZero: true)
 
         if let engine = engine {
             if let mixer = recordingMixer {

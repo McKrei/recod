@@ -74,6 +74,18 @@ GroupBox {
 - `DownloadIconButton(action: ...)`: Иконка облачной загрузки.
 - `CancelIconButton(action: ...)`: Маленький крестик (xmark).
 
+### 5. Overlay Recording Animation
+**Файл**: `Sources/Features/OverlayView.swift`
+
+- Recording-состояние не использует фон-контейнер: отображаются только mic-core и реактивные волны.
+- Анимация волн event-driven (burst-based), а не бесконечный тайловый pulse:
+  - импульс создается по росту громкости речи;
+  - громкая речь может добавить второй delayed импульс;
+  - в тишине допускается только минимальный idle-ореол.
+- Transcribing-состояние использует красный orbital loader (центр + вращающиеся точки).
+- Все численные параметры анимации, порогов и размеров находятся в `AppTheme` (`// MARK: - Overlay`).
+- При добавлении новых состояний overlay переиспользуйте существующие параметры из `AppTheme`, не вводите локальные magic numbers в `OverlayView`.
+
 ---
 
 ## Навигация

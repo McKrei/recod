@@ -24,6 +24,7 @@ class AppState: ObservableObject {
     @Published public var isRecording = false
     @Published public var isOverlayVisible = false
     @Published public var overlayStatus: OverlayStatus = .recording
+    @Published public var overlayAudioLevel: Float = 0
 
     public var saveToClipboard: Bool {
         get {
@@ -78,6 +79,16 @@ class AppState: ObservableObject {
             .receive(on: RunLoop.main)
             .sink { [weak self] recording in
                 self?.isRecording = recording
+                if !recording {
+                    self?.overlayAudioLevel = 0
+                }
+            }
+            .store(in: &cancellables)
+
+        audioRecorder.$audioLevel
+            .receive(on: RunLoop.main)
+            .sink { [weak self] level in
+                self?.overlayAudioLevel = level
             }
             .store(in: &cancellables)
     }
@@ -202,6 +213,10 @@ class AppState: ObservableObject {
 
     func stopRecording() {
         Task {
+            // Switch UI state immediately so the recording mic/ripple disappears without pause.
+            overlayAudioLevel = 0
+            overlayStatus = .transcribing
+
             // Stop BOTH streaming services to prevent leaks if the user switched engines mid-recording
             StreamingTranscriptionService.shared.stopStreaming()
             let _ = ParakeetStreamingService.shared.flushAndCollectRemaining()
@@ -223,7 +238,6 @@ class AppState: ObservableObject {
                 }
 
                 if hasModel {
-                    overlayStatus = .transcribing
                     await saveRecording(url: url)
                 } else {
                     self.isOverlayVisible = false
