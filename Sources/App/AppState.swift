@@ -285,6 +285,15 @@ class AppState: ObservableObject {
         do {
             let rawText: String
             let segments: [TranscriptionSegment]
+
+            // Fetch replacement rules to pass as hotwords
+            var rules: [ReplacementRule] = []
+            let descriptor = FetchDescriptor<ReplacementRule>()
+            do {
+                rules = try modelContext.fetch(descriptor)
+            } catch {
+                await FileLogger.shared.log("Failed to fetch replacement rules: \(error)", level: .error)
+            }
             
             switch selectedEngine {
             case .whisperKit:
@@ -292,7 +301,7 @@ class AppState: ObservableObject {
                       let modelURL = whisperModelManager.getModelURL(for: modelId) else {
                     throw NSError(domain: "Recod", code: 1, userInfo: [NSLocalizedDescriptionKey: "WhisperKit model not ready"])
                 }
-                (rawText, segments) = try await TranscriptionService.shared.transcribe(audioURL: url, modelURL: modelURL)
+                (rawText, segments) = try await TranscriptionService.shared.transcribe(audioURL: url, modelURL: modelURL, rules: rules)
                 
             case .parakeet:
                 guard let modelId = parakeetModelManager.selectedModelId,
@@ -300,29 +309,23 @@ class AppState: ObservableObject {
                       let modelDir = parakeetModelManager.getModelDirectory(for: modelId) else {
                     throw NSError(domain: "Recod", code: 1, userInfo: [NSLocalizedDescriptionKey: "Parakeet model not ready"])
                 }
-                (rawText, segments) = try await ParakeetTranscriptionService.shared.transcribe(audioURL: url, modelDir: modelDir)
+                (rawText, segments) = try await ParakeetTranscriptionService.shared.transcribe(audioURL: url, modelDir: modelDir, rules: rules)
             }
 
             recording.segments = segments
 
             // Apply text replacements
             var finalText = rawText
-            let descriptor = FetchDescriptor<ReplacementRule>()
-            do {
-                let rules = try modelContext.fetch(descriptor)
-                if !rules.isEmpty {
-                    await FileLogger.shared.log("Applying \(rules.count) replacement rules...")
-                    let original = finalText
-                    finalText = TextReplacementService.applyReplacements(text: rawText, rules: rules)
+            if !rules.isEmpty {
+                await FileLogger.shared.log("Applying \(rules.count) replacement rules...")
+                let original = finalText
+                finalText = TextReplacementService.applyReplacements(text: rawText, rules: rules)
 
-                    if original != finalText {
-                        await FileLogger.shared.log("Replacements applied. Text changed.")
-                    } else {
-                        await FileLogger.shared.log("Replacements applied but text remained unchanged.")
-                    }
+                if original != finalText {
+                    await FileLogger.shared.log("Replacements applied. Text changed.")
+                } else {
+                    await FileLogger.shared.log("Replacements applied but text remained unchanged.")
                 }
-            } catch {
-                await FileLogger.shared.log("Failed to fetch replacement rules: \(error)", level: .error)
             }
 
             recording.transcription = finalText

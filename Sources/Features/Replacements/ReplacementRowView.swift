@@ -45,11 +45,34 @@ struct ReplacementRowView: View {
                     .font(.caption)
                     .foregroundStyle(.tertiary)
 
-                Text(rule.replacementText)
-                    .font(.body)
-                    .bold()
-                    .foregroundStyle(.primary)
-                    .lineLimit(2)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(rule.replacementText)
+                        .font(.body)
+                        .bold()
+                        .foregroundStyle(.primary)
+                        .lineLimit(2)
+                    
+                    HStack(spacing: 6) {
+                        if rule.useFuzzyMatching {
+                            Label("Fuzzy", systemImage: "sparkles")
+                                .font(.system(size: 9))
+                                .padding(.horizontal, 4)
+                                .padding(.vertical, 2)
+                                .background(Color.blue.opacity(0.15))
+                                .foregroundStyle(.blue)
+                                .clipShape(Capsule())
+                        }
+                        
+                        let weightText = rule.weight > 1.5 ? "High" : (rule.weight < 1.5 ? "Low" : "Normal")
+                        Label(weightText, systemImage: "arrow.up.circle")
+                            .font(.system(size: 9))
+                            .padding(.horizontal, 4)
+                            .padding(.vertical, 2)
+                            .background(Color.secondary.opacity(0.15))
+                            .foregroundStyle(.secondary)
+                            .clipShape(Capsule())
+                    }
+                }
 
                 Spacer()
 

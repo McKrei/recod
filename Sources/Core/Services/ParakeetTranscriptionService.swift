@@ -41,7 +41,7 @@ final class ParakeetTranscriptionService {
 
     /// Pre-loads the Parakeet model from the given directory.
     /// The directory must contain: encoder.int8.onnx, decoder.int8.onnx, joiner.int8.onnx, tokens.txt
-    func prepareModel(modelDir: URL) async {
+    func prepareModel(modelDir: URL, rules: [ReplacementRule] = []) async {
         if currentModelDir == modelDir && recognizer != nil {
             return
         }
@@ -83,10 +83,46 @@ final class ParakeetTranscriptionService {
 
         let featConfig = sherpaOnnxFeatureConfig(sampleRate: 16000, featureDim: 80)
 
+        // Compile hotwords file if rules exist
+        var hotwordsPath = ""
+        var avgScore: Float = 1.5
+        
+        if !rules.isEmpty {
+            let tempDir = FileManager.default.temporaryDirectory
+            let hotwordsURL = tempDir.appendingPathComponent("parakeet_hotwords.txt")
+            
+            var lines: [String] = []
+            var totalWeight: Float = 0
+            var count: Float = 0
+            
+            for rule in rules {
+                let text = rule.textToReplace.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !text.isEmpty {
+                    lines.append("\(text) \(rule.weight)")
+                    totalWeight += rule.weight
+                    count += 1
+                }
+            }
+            
+            if !lines.isEmpty {
+                do {
+                    let content = lines.joined(separator: "\n")
+                    try content.write(to: hotwordsURL, atomically: true, encoding: .utf8)
+                    hotwordsPath = hotwordsURL.path
+                    avgScore = totalWeight / count
+                    await FileLogger.shared.log("Compiled \(lines.count) hotwords into \(hotwordsPath) (avg weight: \(avgScore))")
+                } catch {
+                    await FileLogger.shared.log("Failed to write hotwords file: \(error)", level: .error)
+                }
+            }
+        }
+
         var config = sherpaOnnxOfflineRecognizerConfig(
             featConfig: featConfig,
             modelConfig: modelConfig,
-            decodingMethod: "greedy_search"
+            decodingMethod: "greedy_search",
+            hotwordsFile: hotwordsPath,
+            hotwordsScore: avgScore
         )
 
         recognizer = SherpaOnnxOfflineRecognizer(config: &config)
@@ -158,13 +194,13 @@ final class ParakeetTranscriptionService {
     ///   - audioURL: URL to the local audio file.
     ///   - modelDir: URL to the Parakeet model directory.
     /// - Returns: Tuple of (cleaned text, timestamped segments).
-    func transcribe(audioURL: URL, modelDir: URL) async throws -> (String, [TranscriptionSegment]) {
+    func transcribe(audioURL: URL, modelDir: URL, rules: [ReplacementRule] = []) async throws -> (String, [TranscriptionSegment]) {
         let startTime = Date()
         await FileLogger.shared.log("--- Parakeet Transcription Start ---")
 
-        // Ensure model is loaded
-        if recognizer == nil || currentModelDir != modelDir {
-            await prepareModel(modelDir: modelDir)
+        // Ensure model is loaded with hotwords
+        if recognizer == nil || currentModelDir != modelDir || !rules.isEmpty {
+            await prepareModel(modelDir: modelDir, rules: rules)
         }
 
         guard recognizer != nil else {

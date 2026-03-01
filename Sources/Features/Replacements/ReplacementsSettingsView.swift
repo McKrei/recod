@@ -17,9 +17,9 @@ struct ReplacementsSettingsView: View {
 
                     // Header
                     SettingsHeaderView(
-                        title: "Text Replacements",
-                        subtitle: "Automatically replace text in transcriptions. Case insensitive.",
-                        systemImage: "text.badge.checkmark"
+                        title: "User Dictionary",
+                        subtitle: "Add custom words and phrases to improve transcription accuracy and automatically replace text.",
+                        systemImage: "book.pages"
                     ) {
                         Button(action: { showingAddSheet = true }) {
                             Label("Add Rule", systemImage: "plus")
@@ -31,8 +31,8 @@ struct ReplacementsSettingsView: View {
                     // Rules List
                     if rules.isEmpty {
                         ContentUnavailableView(
-                            "No Replacements",
-                            systemImage: "text.badge.checkmark",
+                            "No Rules Added",
+                            systemImage: "book.pages",
                             description: Text("Add rules to fix common transcription errors.")
                         )
                         .padding(.top, 40)

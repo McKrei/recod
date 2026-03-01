@@ -38,7 +38,7 @@ final class TranscriptionService {
     ///   - audioURL: URL to the local audio file (WAV 16kHz mono recommended).
     ///   - modelURL: URL to the folder containing the WhisperKit CoreML model.
     /// - Returns: A tuple containing the joined cleaned transcription text and an array of timestamped segments.
-    func transcribe(audioURL: URL, modelURL: URL) async throws -> (String, [TranscriptionSegment]) {
+    func transcribe(audioURL: URL, modelURL: URL, rules: [ReplacementRule] = []) async throws -> (String, [TranscriptionSegment]) {
         let startTime = Date()
         await FileLogger.shared.log("--- WhisperKit Transcription Start ---")
 
@@ -68,6 +68,39 @@ final class TranscriptionService {
         options.task = .transcribe
         options.language = detectedLang
         options.temperature = 0.0
+
+        // Context Biasing (Word Boosting) for WhisperKit
+        if !rules.isEmpty {
+            var promptTokens: [Int] = []
+            
+            for rule in rules {
+                // WhisperKit prefers words starting with a space to match mid-sentence tokens
+                let words = [" " + rule.textToReplace, rule.textToReplace]
+                for word in words {
+                    if let tokenizer = kit.tokenizer {
+                        let encoded = tokenizer.encode(text: word)
+                        if !encoded.isEmpty {
+                            // We repeat the token sequence based on its weight to artificially "boost" it
+                            // Whisper promptTokens limit is around 224, so we need to be careful
+                            let repeatCount = Int(max(1.0, rule.weight))
+                            for _ in 0..<repeatCount {
+                                promptTokens.append(contentsOf: encoded)
+                            }
+                        }
+                    }
+                }
+            }
+            
+            // Limit to max 224 tokens (Whisper's prompt limit)
+            if promptTokens.count > 224 {
+                promptTokens = Array(promptTokens.suffix(224))
+            }
+            
+            if !promptTokens.isEmpty {
+                options.promptTokens = promptTokens
+                await FileLogger.shared.log("WhisperKit Context Biasing: Injected \(promptTokens.count) tokens from user dictionary.")
+            }
+        }
 
         let results = try await kit.transcribe(audioPath: audioURL.path, decodeOptions: options)
 

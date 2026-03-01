@@ -270,3 +270,13 @@ When adding a new Settings Page or Feature View:
   3. Wait exactly `250ms` (time for the OS/active app to consume the simulated paste).
   4. Restore the backed-up items to `NSPasteboard`.
 - **Manual Copy:** For explicitly copying from the History UI, use `copyToClipboard(_:)`. It intentionally replaces the pasteboard contents without preservation.
+
+## 18. User Dictionary & Inference Biasing (Word Boosting)
+- **Engine:** `TextReplacementService`, `TranscriptionService` (Whisper), `ParakeetTranscriptionService` (NVIDIA).
+- **Core Concept:** Users can add custom words, jargon, or names. The system increases their recognition probability (Inference Biasing) and corrects minor phonetic mistakes post-transcription (Fuzzy Matching).
+- **Architecture:**
+  1. **SwiftData:** `ReplacementRule` stores the target word (`replacementText`), optional typo patterns, a priority `weight`, and a `useFuzzyMatching` flag.
+  2. **WhisperKit Biasing:** Injects tokens into `options.promptTokens`. The word is tokenized and repeated based on its `weight` to artificially boost its probability (max 224 tokens).
+  3. **Parakeet Biasing (GPU-PB):** Compiles a dynamic `hotwords.txt` file (e.g., `OpenCode 1.5`) in the temporary directory. Passed to `sherpaOnnxOfflineRecognizerConfig` via `hotwordsFile` to shift logit probabilities during beam search.
+  4. **Fuzzy String Matching:** `String+Levenshtein.swift` calculates edit distance. `TextReplacementService` processes exact matches first, then applies Levenshtein checks on individual words to correct minor typos automatically (e.g., "sparkletini" -> "Sparkletini") without needing an exhaustive list of incorrect forms.
+- **UI Interaction:** If the user only enters a "Target Word" and leaves the "Typo Patterns" blank, the UI auto-fills the primary pattern with the target word. This enables pure "Word Boosting" (teaching the model a new word) without requiring manual typo mapping.
