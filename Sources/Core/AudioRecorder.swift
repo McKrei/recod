@@ -450,7 +450,9 @@ public class AudioRecorder: NSObject, ObservableObject, @unchecked Sendable {
 
         // Mic → micMixer → recordingMixer
         newEngine.connect(inputNode, to: mMixer, format: inputFormat)
-        mMixer.pan = -1.0 // Left channel
+        if inputFormat.channelCount >= 2 {
+            mMixer.pan = -1.0 // Left channel
+        }
         newEngine.connect(mMixer, to: recMixer, format: inputFormat)
 
         // System Audio → recordingMixer (only if enabled)
@@ -459,7 +461,9 @@ public class AudioRecorder: NSObject, ObservableObject, @unchecked Sendable {
                 let sysFormat = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 48000, channels: 2, interleaved: false)!
                 let player = AVAudioPlayerNode()
                 newEngine.attach(player)
-                player.pan = 1.0 // Right channel
+                if inputFormat.channelCount >= 2 {
+                    player.pan = 1.0 // Right channel
+                }
                 newEngine.connect(player, to: recMixer, format: sysFormat)
                 self.sysPlayerNode = player
             }
