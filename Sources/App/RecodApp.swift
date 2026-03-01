@@ -110,6 +110,13 @@ struct MenuBarContent: View {
 
         Divider()
 
+        Toggle("Save to Clipboard", isOn: Binding(
+            get: { appState.saveToClipboard },
+            set: { appState.saveToClipboard = $0 }
+        ))
+        
+        Divider()
+
         Button("Check for Updates...") {
             updaterManager.checkForUpdates()
         }

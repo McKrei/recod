@@ -97,6 +97,23 @@ struct GeneralSettingsView: View {
                                 }
                             ))
                         }
+
+                        Divider()
+
+                        HStack {
+                            VStack(alignment: .leading) {
+                                Text("Save to Clipboard")
+                                    .font(.body)
+                                Text("Keep transcription in clipboard after pasting")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            StatusToggle(isOn: Binding(
+                                get: { appState.saveToClipboard },
+                                set: { appState.saveToClipboard = $0 }
+                            ))
+                        }
                     }
                     .padding(8)
                 }

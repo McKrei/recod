@@ -25,6 +25,19 @@ class AppState: ObservableObject {
     @Published public var isOverlayVisible = false
     @Published public var overlayStatus: OverlayStatus = .recording
 
+    public var saveToClipboard: Bool {
+        get {
+            if UserDefaults.standard.object(forKey: "saveToClipboard") == nil {
+                UserDefaults.standard.set(true, forKey: "saveToClipboard")
+            }
+            return UserDefaults.standard.bool(forKey: "saveToClipboard")
+        }
+        set {
+            self.objectWillChange.send()
+            UserDefaults.standard.set(newValue, forKey: "saveToClipboard")
+        }
+    }
+
     public var recordSystemAudio: Bool {
         get { UserDefaults.standard.bool(forKey: "recordSystemAudio") }
         set {
@@ -319,9 +332,9 @@ class AppState: ObservableObject {
             overlayStatus = .success
             await FileLogger.shared.log("Transcription (\(selectedEngine.displayName)) completed for: \(url.lastPathComponent)")
 
-            ClipboardService.shared.copyToClipboard(finalText)
+            let shouldSaveToClipboard = self.saveToClipboard
             Task {
-                ClipboardService.shared.pasteToActiveApp()
+                await ClipboardService.shared.insertText(finalText, preserveClipboard: !shouldSaveToClipboard)
             }
 
             try? await Task.sleep(nanoseconds: 1_500_000_000)

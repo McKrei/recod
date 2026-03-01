@@ -260,3 +260,13 @@ When adding a new Settings Page or Feature View:
   5. Segments are confirmed if they are followed by at least two more segments (agreement logic to avoid flickering text).
 - **Data Model Updates**: During recording, a `Recording` object is immediately saved to SwiftData with `transcriptionStatus = .streamingTranscription`. The `liveTranscription` and `segments` arrays are updated reactively on the fly.
 - **Final Pass**: When the recording stops, streaming is cancelled, and `TranscriptionService.transcribe()` runs a full batch transcription on the final saved WAV file to produce the highest accuracy result (replacing the live transcription).
+
+## 17. Clipboard Operations & Paste Preservation
+- **Engine:** Custom `ClipboardService.insertText(_:preserveClipboard:)`.
+- **Core Rule:** Never override the user's `NSPasteboard` without their consent. The user might have copied an image or file before recording.
+- **Workflow:**
+  1. If `preserveClipboard` is `true` (user disabled "Save to Clipboard"), back up all `NSPasteboardItem`s using `setData` for every data type (deep copy for compatibility).
+  2. Inject text and simulate `Cmd+V`.
+  3. Wait exactly `250ms` (time for the OS/active app to consume the simulated paste).
+  4. Restore the backed-up items to `NSPasteboard`.
+- **Manual Copy:** For explicitly copying from the History UI, use `copyToClipboard(_:)`. It intentionally replaces the pasteboard contents without preservation.
