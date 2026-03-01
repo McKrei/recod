@@ -1,4 +1,4 @@
-.PHONY: build run clean app dmg release extract-deps
+.PHONY: build run clean app dmg release extract-deps test
 
 APP_NAME = Recod
 BUILD_DIR = build
@@ -27,6 +27,26 @@ build: extract-deps
 # Build the project (release)
 build-release: extract-deps
 	swift build -c release
+
+# Run tests with mic entitlement (required for AVAudioEngine hardware capture)
+test: extract-deps
+	@echo "Building tests..."
+	@swift build --build-tests
+	@echo "Signing test executable and bundle with audio-input entitlement..."
+	@TEST_ARCH=$$(uname -m | sed 's/x86_64/x86_64/' | sed 's/arm64/arm64/'); \
+	XCTEST_BUNDLE=".build/$${TEST_ARCH}-apple-macosx/debug/RecodPackageTests.xctest"; \
+	TEST_EXE="$${XCTEST_BUNDLE}/Contents/MacOS/RecodPackageTests"; \
+	if [ -f "$$TEST_EXE" ]; then \
+		codesign -f -s - --entitlements Recod.entitlements "$$TEST_EXE"; \
+		echo "  Signed: $$TEST_EXE"; \
+	else \
+		echo "  WARNING: test executable not found at $$TEST_EXE"; \
+		echo "  Falling back to signing bundle..."; \
+	fi; \
+	codesign -f -s - --entitlements Recod.entitlements "$$XCTEST_BUNDLE"; \
+	echo "  Signed: $$XCTEST_BUNDLE"
+	@echo "Running AudioEngineGraphTests..."
+	@swift test --filter AudioEngineGraphTests --skip-build 2>&1
 
 # Build and run the application
 run: build kill

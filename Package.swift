@@ -20,6 +20,14 @@ let package = Package(
         .package(path: "Packages/SherpaOnnx")
     ],
     targets: [
+        .testTarget(
+            name: "RecodTests",
+            dependencies: [],
+            path: "Tests",
+            swiftSettings: [
+                .enableUpcomingFeature("StrictConcurrency")
+            ]
+        ),
         .executableTarget(
             name: "Recod",
             dependencies: [
