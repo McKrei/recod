@@ -3,7 +3,6 @@ import AppKit
 import ScreenCaptureKit
 import CoreMedia
 import Accelerate
-import CoreAudio
 
 public enum AudioRecorderError: Error, LocalizedError {
     case permissionDenied
@@ -35,18 +34,6 @@ public enum AudioRecorderError: Error, LocalizedError {
 public class AudioRecorder: NSObject, ObservableObject, @unchecked Sendable {
     // MARK: - Properties
 
-    private enum LevelMeterConfig {
-        static let floorDB: Float = -52
-        static let ceilingDB: Float = 0
-        static let attack: Float = 0.42
-        static let release: Float = 0.14
-        static let minimumVisibleLevel: Float = 0.01
-        static let silenceRMS: Float = 0.00002
-        static let epsilonRMS: Float = 0.000001
-        static let shapingPower: Float = 1.18
-        static let publishIntervalNanoseconds: UInt64 = 50_000_000
-    }
-
     private var engine: AVAudioEngine?
     private var recordingMixer: AVAudioMixerNode?
     private var micMixer: AVAudioMixerNode?
@@ -58,24 +45,13 @@ public class AudioRecorder: NSObject, ObservableObject, @unchecked Sendable {
     private var graphIncludesSystemAudio = false
     private var tapBufferCount: Int = 0
 
-    // Streaming support
-    private var audioConverter: AVAudioConverter?
-    private var streamFormat16kHz: AVAudioFormat?
-    private var streamBuffer: [Float] = []
-    private let streamBufferQueue = DispatchQueue(label: "com.recod.streamBufferQueue")
-
-    // UI level signal
-    private let audioLevelQueue = DispatchQueue(label: "com.recod.audioLevelQueue")
-    private var latestRawAudioLevel: Float = 0
-    private var smoothedAudioLevel: Float = 0
-    private var audioLevelPublisherTask: Task<Void, Never>?
+    // Modular Components
+    private let streamBuffer = AudioStreamBuffer()
+    private let levelMonitor = AudioLevelMonitor()
+    private let deviceManager = CoreAudioDeviceManager()
 
     // System Audio
     private var scStream: SCStream?
-
-    // CoreAudio output sample rate alignment (BT HFP/A2DP fix)
-    private var originalOutputSampleRate: Float64 = 0
-    private var outputDeviceIDForRestore: AudioDeviceID = kAudioObjectUnknown
 
     // Config
     public var recordSystemAudio: Bool = false
@@ -89,25 +65,27 @@ public class AudioRecorder: NSObject, ObservableObject, @unchecked Sendable {
 
     // MARK: - Initializer & Pre-warm
 
-    public func getAudioSamples() -> [Float] {
-        streamBufferQueue.sync { streamBuffer }
-    }
+    public override init() {
+        super.init()
 
-    /// Возвращает аудиосэмплы, добавленные после указанного индекса.
-    /// Полезно для стримингового распознавания без копирования всего буфера каждый раз.
-    public func getNewAudioSamples(from index: Int) -> [Float] {
-        streamBufferQueue.sync {
-            guard index < streamBuffer.count else { return [] }
-            return Array(streamBuffer[index...])
+        // Bind Level Monitor to published state
+        levelMonitor.onLevelUpdate = { [weak self] level in
+            self?.audioLevel = level
         }
     }
 
-    public func clearAudioSamples() {
-        streamBufferQueue.sync { streamBuffer.removeAll() }
+    public func getAudioSamples() -> [Float] {
+        streamBuffer.getSamples()
     }
 
-    public override init() {
-        super.init()
+    /// Returns the accumulated audio samples added after the specified index.
+    /// Useful for streaming transcription to avoid copying the entire buffer repeatedly.
+    public func getNewAudioSamples(from index: Int) -> [Float] {
+        streamBuffer.getNewSamples(from: index)
+    }
+
+    public func clearAudioSamples() {
+        streamBuffer.clear()
     }
 
     /// Prepares the audio engine at app launch so the first recording works immediately.
@@ -135,11 +113,11 @@ public class AudioRecorder: NSObject, ObservableObject, @unchecked Sendable {
             }
 
             // Step 2: align rates via CoreAudio before any engine touches the hardware
-            let inputRate = coreAudioDefaultInputSampleRate()
-            let outputRate = coreAudioDefaultOutputSampleRate()
+            let inputRate = deviceManager.defaultInputSampleRate()
+            let outputRate = deviceManager.defaultOutputSampleRate()
             if inputRate > 0 && outputRate > 0 && inputRate != outputRate {
                 Log("prepareAudio: rate mismatch \(inputRate)Hz input vs \(outputRate)Hz output — aligning")
-                let aligned = alignOutputSampleRate(to: inputRate)
+                let aligned = deviceManager.alignOutputSampleRate(to: inputRate)
                 if !aligned {
                     // BT HFP device rejected the rate change. Skip graph setup — it would
                     // silently produce 0 tap buffers. startRecording() will re-attempt
@@ -240,11 +218,11 @@ public class AudioRecorder: NSObject, ObservableObject, @unchecked Sendable {
             // AVAudioEngine instance causes macOS to capture the mic hardware. When that probe engine is
             // released and the real engine starts, the mic may still be "held", causing installTap to
             // receive zero buffers. Instead, read rates directly via CoreAudio (no hardware capture).
-            let inputRate = coreAudioDefaultInputSampleRate()
-            let outputRate = coreAudioDefaultOutputSampleRate()
+            let inputRate = deviceManager.defaultInputSampleRate()
+            let outputRate = deviceManager.defaultOutputSampleRate()
             if inputRate > 0 && outputRate > 0 && inputRate != outputRate {
                 Log("Pre-graph sample rate mismatch: input=\(inputRate)Hz output=\(outputRate)Hz — aligning output BEFORE graph setup")
-                let aligned = alignOutputSampleRate(to: inputRate)
+                let aligned = deviceManager.alignOutputSampleRate(to: inputRate)
                 if !aligned {
                     // BT HFP device rejected the rate change. The graph would silently receive
                     // 0 tap buffers. Fail immediately with a user-actionable error instead of
@@ -278,10 +256,7 @@ public class AudioRecorder: NSObject, ObservableObject, @unchecked Sendable {
         let tapFormat = mixer.outputFormat(forBus: 0)
         Log("Tap format: \(tapFormat.sampleRate)Hz, \(tapFormat.channelCount)ch")
 
-        if let format16kHz = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 16000, channels: 1, interleaved: false) {
-            self.streamFormat16kHz = format16kHz
-            self.audioConverter = AVAudioConverter(from: tapFormat, to: format16kHz)
-        }
+        self.streamBuffer.prepare(for: tapFormat)
         self.clearAudioSamples()
 
         let fileURL = getNewRecordingURL()
@@ -327,8 +302,9 @@ public class AudioRecorder: NSObject, ObservableObject, @unchecked Sendable {
             } catch {
                 Log("Write error: \(error)", level: .error)
             }
-            self.processBufferForStreaming(buffer)
-            self.processBufferForLevel(buffer)
+            
+            self.streamBuffer.processBuffer(buffer)
+            self.levelMonitor.processBuffer(buffer)
         }
         tapInstalled = true
 
@@ -367,7 +343,7 @@ public class AudioRecorder: NSObject, ObservableObject, @unchecked Sendable {
             sysPlayerNode?.play()
         }
 
-        startAudioLevelPublishing()
+        levelMonitor.startPublishing()
 
         await MainActor.run { self.isRecording = true }
         Log("Recording started (System Audio: \(recordSystemAudio))")
@@ -398,7 +374,7 @@ public class AudioRecorder: NSObject, ObservableObject, @unchecked Sendable {
         let url = audioFile?.url
         audioFile = nil
 
-        stopAudioLevelPublishing(resetToZero: true)
+        levelMonitor.stopPublishing(resetToZero: true)
 
         await MainActor.run { self.isRecording = false }
         Log("Recording stopped")
@@ -412,128 +388,11 @@ public class AudioRecorder: NSObject, ObservableObject, @unchecked Sendable {
 
     // MARK: - Private Helpers
 
-    private func processBufferForStreaming(_ buffer: AVAudioPCMBuffer) {
-        guard let converter = audioConverter, let format16kHz = streamFormat16kHz else { return }
-
-        // Calculate max capacity for converted buffer
-        let capacity = AVAudioFrameCount(Double(buffer.frameLength) * (format16kHz.sampleRate / buffer.format.sampleRate)) + 4096
-        guard capacity > 0, let outputBuffer = AVAudioPCMBuffer(pcmFormat: format16kHz, frameCapacity: capacity) else { return }
-
-        var error: NSError? = nil
-        final class ProviderState: @unchecked Sendable {
-            var hasProvidedData = false
-        }
-        let state = ProviderState()
-
-        let inputBlock: AVAudioConverterInputBlock = { inNumPackets, outStatus in
-            if state.hasProvidedData {
-                outStatus.pointee = .noDataNow
-                return nil
-            }
-            state.hasProvidedData = true
-            outStatus.pointee = .haveData
-            return buffer
-        }
-
-        converter.convert(to: outputBuffer, error: &error, withInputFrom: inputBlock)
-
-        if error == nil, let channelData = outputBuffer.floatChannelData {
-            let frameLength = Int(outputBuffer.frameLength)
-            if frameLength > 0 {
-                let bufferPointer = UnsafeBufferPointer<Float>(start: channelData[0], count: frameLength)
-                let samples = Array(bufferPointer)
-
-                streamBufferQueue.async {
-                    self.streamBuffer.append(contentsOf: samples)
-                }
-            }
-        }
-    }
-
-    private func processBufferForLevel(_ buffer: AVAudioPCMBuffer) {
-        let frameLength = Int(buffer.frameLength)
-        guard frameLength > 0, let channelData = buffer.floatChannelData else { return }
-
-        let channelCount = Int(buffer.format.channelCount)
-        guard channelCount > 0 else { return }
-
-        var channelZeroRMS: Float = 0
-        vDSP_rmsqv(channelData[0], 1, &channelZeroRMS, vDSP_Length(frameLength))
-
-        let rms: Float
-        if channelZeroRMS > LevelMeterConfig.silenceRMS || channelCount == 1 {
-            rms = channelZeroRMS
-        } else {
-            var sum: Float = 0
-            for channel in 0 ..< channelCount {
-                var value: Float = 0
-                vDSP_rmsqv(channelData[channel], 1, &value, vDSP_Length(frameLength))
-                sum += value
-            }
-            rms = sum / Float(channelCount)
-        }
-
-        let safeRMS = max(rms, LevelMeterConfig.epsilonRMS)
-        let db = 20 * log10f(safeRMS)
-        let clampedDB = min(max(db, LevelMeterConfig.floorDB), LevelMeterConfig.ceilingDB)
-        let normalized = (clampedDB - LevelMeterConfig.floorDB) / (LevelMeterConfig.ceilingDB - LevelMeterConfig.floorDB)
-        let shaped = powf(min(max(normalized, 0), 1), LevelMeterConfig.shapingPower)
-
-        audioLevelQueue.async { [weak self] in
-            self?.latestRawAudioLevel = shaped
-        }
-    }
-
-    private func startAudioLevelPublishing() {
-        stopAudioLevelPublishing(resetToZero: false)
-
-        audioLevelQueue.sync {
-            self.latestRawAudioLevel = 0
-            self.smoothedAudioLevel = 0
-        }
-
-        audioLevelPublisherTask = Task.detached(priority: .utility) { [weak self] in
-            guard let self = self else { return }
-
-            while !Task.isCancelled {
-                let publishedValue = self.audioLevelQueue.sync { () -> Float in
-                    let target = self.latestRawAudioLevel
-                    let coefficient = target > self.smoothedAudioLevel ? LevelMeterConfig.attack : LevelMeterConfig.release
-                    self.smoothedAudioLevel += (target - self.smoothedAudioLevel) * coefficient
-                    let clamped = min(max(self.smoothedAudioLevel, 0), 1)
-                    return clamped < LevelMeterConfig.minimumVisibleLevel ? 0 : clamped
-                }
-
-                await MainActor.run {
-                    self.audioLevel = publishedValue
-                }
-
-                try? await Task.sleep(nanoseconds: LevelMeterConfig.publishIntervalNanoseconds)
-            }
-        }
-    }
-
-    private func stopAudioLevelPublishing(resetToZero: Bool) {
-        audioLevelPublisherTask?.cancel()
-        audioLevelPublisherTask = nil
-
-        audioLevelQueue.sync {
-            self.latestRawAudioLevel = 0
-            self.smoothedAudioLevel = 0
-        }
-
-        if resetToZero {
-            Task { @MainActor [weak self] in
-                self?.audioLevel = 0
-            }
-        }
-    }
-
     private func teardownGraph() {
         guard graphInitialized else { return }
 
-        restoreOutputSampleRate()
-        stopAudioLevelPublishing(resetToZero: true)
+        deviceManager.restoreOutputSampleRate()
+        levelMonitor.stopPublishing(resetToZero: true)
 
         if let engine = engine {
             if let mixer = recordingMixer {
@@ -562,165 +421,6 @@ public class AudioRecorder: NSObject, ObservableObject, @unchecked Sendable {
         graphInitialized = false
         graphIncludesSystemAudio = false
         Log("AudioRecorder graph torn down (Engine Released)")
-    }
-
-    // MARK: - CoreAudio Output Sample Rate Alignment
-
-    /// Returns the nominal sample rate of the default input device via CoreAudio.
-    /// Does NOT create an AVAudioEngine — no microphone hardware is captured.
-    private func coreAudioDefaultInputSampleRate() -> Float64 {
-        var deviceID = AudioDeviceID(kAudioObjectUnknown)
-        var propSize = UInt32(MemoryLayout<AudioDeviceID>.size)
-        var addr = AudioObjectPropertyAddress(
-            mSelector: kAudioHardwarePropertyDefaultInputDevice,
-            mScope: kAudioObjectPropertyScopeGlobal,
-            mElement: kAudioObjectPropertyElementMain
-        )
-        guard AudioObjectGetPropertyData(
-            AudioObjectID(kAudioObjectSystemObject), &addr, 0, nil, &propSize, &deviceID
-        ) == noErr, deviceID != kAudioObjectUnknown else { return 0 }
-
-        var rateAddr = AudioObjectPropertyAddress(
-            mSelector: kAudioDevicePropertyNominalSampleRate,
-            mScope: kAudioObjectPropertyScopeGlobal,
-            mElement: kAudioObjectPropertyElementMain
-        )
-        var rate = Float64(0)
-        var rateSize = UInt32(MemoryLayout<Float64>.size)
-        AudioObjectGetPropertyData(deviceID, &rateAddr, 0, nil, &rateSize, &rate)
-        return rate
-    }
-
-    /// Returns the nominal sample rate of the default output device via CoreAudio.
-    /// Does NOT create an AVAudioEngine — no hardware is captured.
-    private func coreAudioDefaultOutputSampleRate() -> Float64 {
-        var deviceID = AudioDeviceID(kAudioObjectUnknown)
-        var propSize = UInt32(MemoryLayout<AudioDeviceID>.size)
-        var addr = AudioObjectPropertyAddress(
-            mSelector: kAudioHardwarePropertyDefaultOutputDevice,
-            mScope: kAudioObjectPropertyScopeGlobal,
-            mElement: kAudioObjectPropertyElementMain
-        )
-        guard AudioObjectGetPropertyData(
-            AudioObjectID(kAudioObjectSystemObject), &addr, 0, nil, &propSize, &deviceID
-        ) == noErr, deviceID != kAudioObjectUnknown else { return 0 }
-
-        var rateAddr = AudioObjectPropertyAddress(
-            mSelector: kAudioDevicePropertyNominalSampleRate,
-            mScope: kAudioObjectPropertyScopeGlobal,
-            mElement: kAudioObjectPropertyElementMain
-        )
-        var rate = Float64(0)
-        var rateSize = UInt32(MemoryLayout<Float64>.size)
-        AudioObjectGetPropertyData(deviceID, &rateAddr, 0, nil, &rateSize, &rate)
-        return rate
-    }
-
-    /// Aligns the default output device's nominal sample rate to match the input device.
-    ///
-    /// Problem: When Bluetooth HFP is active, input = 16kHz (HFP) and output = 44100Hz (A2DP).
-    /// AVAudioEngine builds an internal aggregate device from default input + output.
-    /// If their sample rates differ, the engine starts without error but the render graph
-    /// breaks silently — installTap receives zero buffers.
-    ///
-    /// Solution: force output device to the same sample rate as input before engine.start().
-    /// Restore the original rate after recording stops.
-    ///
-    /// - Returns: `true` if alignment succeeded (or was not needed), `false` if the output
-    ///   device rejected the rate change (e.g. Bluetooth HFP).  When `false` is returned the
-    ///   caller should throw `AudioRecorderError.bluetoothHFPDetected` immediately instead of
-    ///   building the graph — the graph will silently receive 0 tap buffers in this case.
-    @discardableResult
-    private func alignOutputSampleRate(to targetRate: Float64) -> Bool {
-        var outputDeviceID = AudioDeviceID(kAudioObjectUnknown)
-        var propSize = UInt32(MemoryLayout<AudioDeviceID>.size)
-        var defaultOutputAddr = AudioObjectPropertyAddress(
-            mSelector: kAudioHardwarePropertyDefaultOutputDevice,
-            mScope: kAudioObjectPropertyScopeGlobal,
-            mElement: kAudioObjectPropertyElementMain
-        )
-        guard AudioObjectGetPropertyData(
-            AudioObjectID(kAudioObjectSystemObject),
-            &defaultOutputAddr, 0, nil, &propSize, &outputDeviceID
-        ) == noErr, outputDeviceID != kAudioObjectUnknown else {
-            Log("alignOutputSampleRate: failed to get default output device", level: .error)
-            return false
-        }
-
-        var rateAddr = AudioObjectPropertyAddress(
-            mSelector: kAudioDevicePropertyNominalSampleRate,
-            mScope: kAudioObjectPropertyScopeGlobal,
-            mElement: kAudioObjectPropertyElementMain
-        )
-        var currentRate = Float64(0)
-        var rateSize = UInt32(MemoryLayout<Float64>.size)
-        AudioObjectGetPropertyData(outputDeviceID, &rateAddr, 0, nil, &rateSize, &currentRate)
-
-        guard currentRate != targetRate else {
-            Log("alignOutputSampleRate: already at \(targetRate)Hz — no change needed")
-            originalOutputSampleRate = 0
-            outputDeviceIDForRestore = kAudioObjectUnknown
-            return true
-        }
-
-        Log("alignOutputSampleRate: output \(currentRate)Hz → \(targetRate)Hz (saving for restore)")
-        originalOutputSampleRate = currentRate
-        outputDeviceIDForRestore = outputDeviceID
-
-        var newRate = targetRate
-        let err = AudioObjectSetPropertyData(outputDeviceID, &rateAddr, 0, nil, rateSize, &newRate)
-        if err != noErr {
-            Log("alignOutputSampleRate: AudioObjectSetPropertyData failed with error \(err) — Bluetooth HFP device rejected rate change", level: .error)
-            originalOutputSampleRate = 0
-            outputDeviceIDForRestore = kAudioObjectUnknown
-            return false
-        }
-        return true
-    }
-
-    private func restoreOutputSampleRate() {
-        guard outputDeviceIDForRestore != kAudioObjectUnknown, originalOutputSampleRate > 0 else { return }
-
-        // Check if the target rate is supported by the device.
-        // Bluetooth devices in HFP mode do not accept arbitrary sample rates — attempting to set
-        // an unsupported rate returns kAudioHardwareUnsupportedOperationError (1852797029).
-        var availRatesAddr = AudioObjectPropertyAddress(
-            mSelector: kAudioDevicePropertyAvailableNominalSampleRates,
-            mScope: kAudioObjectPropertyScopeGlobal,
-            mElement: kAudioObjectPropertyElementMain
-        )
-        var dataSize = UInt32(0)
-        let sizeErr = AudioObjectGetPropertyDataSize(outputDeviceIDForRestore, &availRatesAddr, 0, nil, &dataSize)
-        if sizeErr == noErr && dataSize > 0 {
-            let count = Int(dataSize) / MemoryLayout<AudioValueRange>.size
-            var ranges = [AudioValueRange](repeating: AudioValueRange(), count: count)
-            AudioObjectGetPropertyData(outputDeviceIDForRestore, &availRatesAddr, 0, nil, &dataSize, &ranges)
-            let supported = ranges.contains { range in
-                originalOutputSampleRate >= range.mMinimum && originalOutputSampleRate <= range.mMaximum
-            }
-            if !supported {
-                Log("restoreOutputSampleRate: \(originalOutputSampleRate)Hz not supported by output device (likely BT in HFP mode) — skipping restore")
-                originalOutputSampleRate = 0
-                outputDeviceIDForRestore = kAudioObjectUnknown
-                return
-            }
-        }
-
-        var rateAddr = AudioObjectPropertyAddress(
-            mSelector: kAudioDevicePropertyNominalSampleRate,
-            mScope: kAudioObjectPropertyScopeGlobal,
-            mElement: kAudioObjectPropertyElementMain
-        )
-        var rate = originalOutputSampleRate
-        let rateSize = UInt32(MemoryLayout<Float64>.size)
-        let err = AudioObjectSetPropertyData(outputDeviceIDForRestore, &rateAddr, 0, nil, rateSize, &rate)
-        if err == noErr {
-            Log("restoreOutputSampleRate: restored output to \(originalOutputSampleRate)Hz")
-        } else {
-            Log("restoreOutputSampleRate: failed to restore: \(err)", level: .error)
-        }
-        originalOutputSampleRate = 0
-        outputDeviceIDForRestore = kAudioObjectUnknown
     }
 
     private func setupGraph() {
