@@ -25,6 +25,9 @@ class AppState: ObservableObject {
     @Published public var isOverlayVisible = false
     @Published public var overlayStatus: OverlayStatus = .recording
     @Published public var overlayAudioLevel: Float = 0
+    /// Optional custom error message shown in the overlay when `overlayStatus == .error`.
+    /// If nil, the overlay shows its default error icon.
+    @Published public var overlayErrorMessage: String? = nil
 
     /// Guards against race conditions when hotkey is pressed rapidly.
     /// Prevents double-start / double-stop of the recording pipeline.
@@ -215,6 +218,14 @@ class AppState: ObservableObject {
                         }
                     }
                 }
+            } catch AudioRecorderError.bluetoothHFPDetected {
+                await FileLogger.shared.log("Bluetooth HFP detected — recording aborted", level: .error)
+                overlayStatus = .error
+                overlayErrorMessage = "Switch input to built-in mic\n(System Settings → Sound → Input)"
+                isOverlayVisible = true
+                try? await Task.sleep(nanoseconds: 4_000_000_000)
+                overlayErrorMessage = nil
+                isOverlayVisible = false
             } catch {
                 await FileLogger.shared.log("Failed to start recording: \(error)", level: .error)
                 // Reset overlay state so the UI doesn't get stuck in .recording

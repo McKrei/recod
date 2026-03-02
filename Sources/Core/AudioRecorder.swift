@@ -10,6 +10,10 @@ public enum AudioRecorderError: Error, LocalizedError {
     case setupFailed
     case recordingFailed
     case screenCapturePermissionDenied
+    /// Bluetooth headset switched input to HFP (16 kHz) and the output device
+    /// rejected the sample-rate alignment request.  Recording is impossible until
+    /// the user selects a different input device (e.g. built-in microphone).
+    case bluetoothHFPDetected
 
     public var errorDescription: String? {
         switch self {
@@ -17,6 +21,7 @@ public enum AudioRecorderError: Error, LocalizedError {
         case .setupFailed: return "Audio setup failed"
         case .recordingFailed: return "Recording failed"
         case .screenCapturePermissionDenied: return "Screen recording permission is required for system audio capture. Please enable it in System Settings → Privacy & Security → Screen & System Audio Recording."
+        case .bluetoothHFPDetected: return "Bluetooth headset is using the phone call (HFP) profile which only supports 16 kHz. Please switch the input device to the built-in microphone in System Settings → Sound → Input."
         }
     }
 }
@@ -134,7 +139,15 @@ public class AudioRecorder: NSObject, ObservableObject, @unchecked Sendable {
             let outputRate = coreAudioDefaultOutputSampleRate()
             if inputRate > 0 && outputRate > 0 && inputRate != outputRate {
                 Log("prepareAudio: rate mismatch \(inputRate)Hz input vs \(outputRate)Hz output — aligning")
-                alignOutputSampleRate(to: inputRate)
+                let aligned = alignOutputSampleRate(to: inputRate)
+                if !aligned {
+                    // BT HFP device rejected the rate change. Skip graph setup — it would
+                    // silently produce 0 tap buffers. startRecording() will re-attempt
+                    // alignment and throw bluetoothHFPDetected with a user-actionable message.
+                    Log("prepareAudio: alignOutputSampleRate failed (BT HFP?) — skipping graph setup", level: .warning)
+                    isPrewarming = false
+                    return
+                }
                 // Wait for CoreAudio to propagate asynchronously
                 try? await Task.sleep(nanoseconds: 300_000_000)
             }
@@ -231,7 +244,14 @@ public class AudioRecorder: NSObject, ObservableObject, @unchecked Sendable {
             let outputRate = coreAudioDefaultOutputSampleRate()
             if inputRate > 0 && outputRate > 0 && inputRate != outputRate {
                 Log("Pre-graph sample rate mismatch: input=\(inputRate)Hz output=\(outputRate)Hz — aligning output BEFORE graph setup")
-                alignOutputSampleRate(to: inputRate)
+                let aligned = alignOutputSampleRate(to: inputRate)
+                if !aligned {
+                    // BT HFP device rejected the rate change. The graph would silently receive
+                    // 0 tap buffers. Fail immediately with a user-actionable error instead of
+                    // waiting 2 seconds for the watchdog to fire.
+                    Log("alignOutputSampleRate failed — Bluetooth HFP active. Aborting recording.", level: .error)
+                    throw AudioRecorderError.bluetoothHFPDetected
+                }
                 // Wait for CoreAudio to propagate the change before AVAudioEngine reads device rates
                 try await Task.sleep(nanoseconds: 300_000_000)
             }
@@ -605,7 +625,13 @@ public class AudioRecorder: NSObject, ObservableObject, @unchecked Sendable {
     ///
     /// Solution: force output device to the same sample rate as input before engine.start().
     /// Restore the original rate after recording stops.
-    private func alignOutputSampleRate(to targetRate: Float64) {
+    ///
+    /// - Returns: `true` if alignment succeeded (or was not needed), `false` if the output
+    ///   device rejected the rate change (e.g. Bluetooth HFP).  When `false` is returned the
+    ///   caller should throw `AudioRecorderError.bluetoothHFPDetected` immediately instead of
+    ///   building the graph — the graph will silently receive 0 tap buffers in this case.
+    @discardableResult
+    private func alignOutputSampleRate(to targetRate: Float64) -> Bool {
         var outputDeviceID = AudioDeviceID(kAudioObjectUnknown)
         var propSize = UInt32(MemoryLayout<AudioDeviceID>.size)
         var defaultOutputAddr = AudioObjectPropertyAddress(
@@ -618,7 +644,7 @@ public class AudioRecorder: NSObject, ObservableObject, @unchecked Sendable {
             &defaultOutputAddr, 0, nil, &propSize, &outputDeviceID
         ) == noErr, outputDeviceID != kAudioObjectUnknown else {
             Log("alignOutputSampleRate: failed to get default output device", level: .error)
-            return
+            return false
         }
 
         var rateAddr = AudioObjectPropertyAddress(
@@ -634,7 +660,7 @@ public class AudioRecorder: NSObject, ObservableObject, @unchecked Sendable {
             Log("alignOutputSampleRate: already at \(targetRate)Hz — no change needed")
             originalOutputSampleRate = 0
             outputDeviceIDForRestore = kAudioObjectUnknown
-            return
+            return true
         }
 
         Log("alignOutputSampleRate: output \(currentRate)Hz → \(targetRate)Hz (saving for restore)")
@@ -644,10 +670,12 @@ public class AudioRecorder: NSObject, ObservableObject, @unchecked Sendable {
         var newRate = targetRate
         let err = AudioObjectSetPropertyData(outputDeviceID, &rateAddr, 0, nil, rateSize, &newRate)
         if err != noErr {
-            Log("alignOutputSampleRate: AudioObjectSetPropertyData failed: \(err)", level: .error)
+            Log("alignOutputSampleRate: AudioObjectSetPropertyData failed with error \(err) — Bluetooth HFP device rejected rate change", level: .error)
             originalOutputSampleRate = 0
             outputDeviceIDForRestore = kAudioObjectUnknown
+            return false
         }
+        return true
     }
 
     private func restoreOutputSampleRate() {

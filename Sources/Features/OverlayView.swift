@@ -72,14 +72,33 @@ struct OverlayView: View {
                 .symbolEffect(.bounce, options: .speed(1.2))
                 .transition(.scale.combined(with: .opacity))
         case .error:
-            Image(systemName: "exclamationmark.triangle.fill")
-                .font(.system(size: AppTheme.overlayErrorIconSize, weight: .bold))
-                .foregroundStyle(
-                    LinearGradient(colors: [.orange.opacity(0.95), .red.opacity(0.88)], startPoint: .top, endPoint: .bottom)
-                )
-                .shadow(color: .red.opacity(0.35), radius: AppTheme.overlayStatusShadowRadius, x: 0, y: AppTheme.overlayStatusShadowY)
-                .symbolEffect(.bounce, options: .speed(1.2))
+            if let message = appState.overlayErrorMessage {
+                VStack(spacing: 6) {
+                    Image(systemName: "bluetooth.slash")
+                        .font(.system(size: AppTheme.overlayErrorIconSize * 0.75, weight: .bold))
+                        .foregroundStyle(
+                            LinearGradient(colors: [.orange.opacity(0.95), .red.opacity(0.88)], startPoint: .top, endPoint: .bottom)
+                        )
+                        .shadow(color: .red.opacity(0.35), radius: AppTheme.overlayStatusShadowRadius, x: 0, y: AppTheme.overlayStatusShadowY)
+                        .symbolEffect(.bounce, options: .speed(1.2))
+                    Text(message)
+                        .font(.system(size: 9, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.85))
+                        .multilineTextAlignment(.center)
+                        .lineLimit(3)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
                 .transition(.scale.combined(with: .opacity))
+            } else {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.system(size: AppTheme.overlayErrorIconSize, weight: .bold))
+                    .foregroundStyle(
+                        LinearGradient(colors: [.orange.opacity(0.95), .red.opacity(0.88)], startPoint: .top, endPoint: .bottom)
+                    )
+                    .shadow(color: .red.opacity(0.35), radius: AppTheme.overlayStatusShadowRadius, x: 0, y: AppTheme.overlayStatusShadowY)
+                    .symbolEffect(.bounce, options: .speed(1.2))
+                    .transition(.scale.combined(with: .opacity))
+            }
         }
     }
 
