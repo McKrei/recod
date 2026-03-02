@@ -291,3 +291,100 @@ When adding a new Settings Page or Feature View:
   3. **Parakeet Biasing (GPU-PB):** Compiles a dynamic `hotwords.txt` file (e.g., `OpenCode 1.5`) in the temporary directory. Passed to `sherpaOnnxOfflineRecognizerConfig` via `hotwordsFile` to shift logit probabilities during beam search.
   4. **Fuzzy N-gram Matching:** `String+Levenshtein.swift` calculates edit distance. `TextReplacementService` processes exact matches first, then applies a sliding window (N-gram) Levenshtein check to correct both single-word and multi-word phrases automatically (e.g., "клот код" -> "claude code", or "sparkletini" -> "Sparkletini") without needing an exhaustive list of incorrect forms. Tolerates word merging and splitting from the ASR models, as well as minor morphological changes (cases, suffixes).
 - **UI Interaction:** If the user only enters a "Target Word" and leaves the "Typo Patterns" blank, the UI auto-fills the primary pattern with the target word. This enables pure "Word Boosting" (teaching the model a new word) without requiring manual typo mapping.
+
+## 19. Bluetooth HFP Bug & AVAudioEngine Graph Rules (CRITICAL)
+> **Root cause confirmed:** BT HFP switches the input device to 16kHz. macOS then builds a broken aggregate device (input=16kHz, output=44100Hz). `installTap` silently receives 0 buffers → empty WAV file.
+
+### probeEngine Anti-Pattern — NEVER DO THIS
+> **FORBIDDEN:** Creating a temporary `AVAudioEngine` to read hardware sample rates.
+
+```swift
+// ❌ WRONG — captures the microphone, causing the real engine to receive 0 buffers
+let probeEngine = AVAudioEngine()
+let rate = probeEngine.inputNode.inputFormat(forBus: 0).sampleRate
+```
+
+Accessing `AVAudioEngine().inputNode` **captures the hardware microphone**. Even after the probe engine is released, macOS does not immediately release the device. The real engine starts and gets 0 buffers.
+
+**Correct approach:** Use CoreAudio `AudioObjectGetPropertyData` directly:
+```swift
+// ✅ CORRECT — reads rate without capturing the mic
+func coreAudioDefaultInputSampleRate() -> Double {
+    var deviceID = AudioDeviceID(0)
+    var size = UInt32(MemoryLayout<AudioDeviceID>.size)
+    var addr = AudioObjectPropertyAddress(
+        mSelector: kAudioHardwarePropertyDefaultInputDevice,
+        mScope: kAudioObjectPropertyScopeGlobal,
+        mElement: kAudioObjectPropertyElementMain)
+    AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &addr, 0, nil, &size, &deviceID)
+    // then query kAudioDevicePropertyNominalSampleRate on deviceID
+}
+```
+
+### Sample Rate Alignment Workflow
+Before calling `setupGraph()`, `startRecording()` must:
+1. Read input rate via `coreAudioDefaultInputSampleRate()`.
+2. Read output rate via `coreAudioDefaultOutputSampleRate()`.
+3. If they differ: call `alignOutputSampleRate(to: inputRate)` — sets output device to match input via `AudioObjectSetPropertyData`.
+4. **Wait 300ms** — CoreAudio applies rate changes asynchronously.
+5. Call `setupGraph()` and `engine.start()`.
+6. After recording stops: call `restoreOutputSampleRate()`.
+
+**BT HFP limitation:** `alignOutputSampleRate` will receive `kAudioHardwareUnsupportedOperationError (1852797029)` from BT HFP devices — they reject rate changes. In this case the watchdog will fire and throw `AudioRecorderError.recordingFailed`. User workaround: switch input to built-in microphone.
+
+### Tap Watchdog
+After `engine.start()`, a 2-second watchdog checks that the tap has received at least 1 buffer. If 0 buffers → `teardownGraph()` + throw `AudioRecorderError.recordingFailed`. This catches the silent "empty WAV" scenario before the user wastes time recording.
+
+### Pan Guard (Mono BT HFP)
+BT HFP input nodes are **mono** (`channelCount == 1`). Setting `pan != 0` on a mono node crashes AVAudioEngine. Always guard:
+```swift
+if inputFormat.channelCount >= 2 {
+    micPlayerNode.pan = -1.0
+}
+```
+
+### Audio Engine Graph Invariants — DO NOT VIOLATE
+1. **Never use `AVAudioEngine` for rate probe** — any engine captures mic via `inputNode`.
+2. **Never force 16kHz in the graph** — use `format: nil` for tap; convert in `processBufferForStreaming` only.
+3. **Tap with `format: nil`** — native node format; mismatch = fatal crash.
+4. **`engine = nil` in `teardownGraph()`** — releases BT A2DP back to stereo profile.
+5. **Pan only when `channelCount >= 2`** — mono BT HFP crashes with pan != 0.
+6. **Rate alignment BEFORE `setupGraph()`** — engine reads device rates on first `inputNode` access.
+7. **300ms sleep after alignment** — CoreAudio applies rate change asynchronously.
+
+## 20. Testing Workflow (Audio Engine Tests)
+
+### Pre-requisite: Set Default Input to Built-in Mic
+BT HFP (16kHz input) causes `fullGraphTapReceivesBuffers` to crash with `Input HW format and tap format not matching`. Before running tests, always ensure the default input is the built-in microphone:
+
+```bash
+# Check current default input
+SwitchAudioSource -t input -c
+
+# Set to built-in mic (adjust name to match system locale)
+SwitchAudioSource -t input -s "MacBook Pro Microphone"
+# or Russian macOS:
+SwitchAudioSource -t input -s "Микрофон MacBook Pro"
+```
+
+### Running Tests
+```bash
+make test
+```
+This runs both test suites sequentially:
+1. `AudioEngineGraphTests` (4 integration tests, ~10s)
+2. `AudioRecorderUnitTests` (9 unit + integration tests, ~6s)
+
+Both suites require signing with `audio-input` entitlement (handled by `Makefile`).
+
+### Test Suite Summary
+| Suite | Count | What it tests |
+|---|---|---|
+| `AudioEngineGraphTests` | 4 | Full graph tap buffers, system audio graph, CoreAudio rate helpers, model-switch regression |
+| `AudioRecorderUnitTests` | 9 | CoreAudio probe (no mic capture), streaming converter, streamBuffer correctness, align/restore lifecycle, watchdog fires on 0 buffers, watchdog silent on healthy graph |
+
+### When Adding New Audio Tests
+- **Never** create a persistent `AVAudioEngine` in test setup — use a fresh instance per test.
+- **Always** stop and nil the engine in `tearDown()` to release the microphone.
+- If a test requires `engine.inputNode`, document that it needs built-in mic as default input.
+- For rate-probe tests, use the CoreAudio helper functions — not `AVAudioEngine`.

@@ -45,8 +45,9 @@ test: extract-deps
 	fi; \
 	codesign -f -s - --entitlements Recod.entitlements "$$XCTEST_BUNDLE"; \
 	echo "  Signed: $$XCTEST_BUNDLE"
-	@echo "Running AudioEngineGraphTests..."
+	@echo "Running all audio tests (AudioEngineGraphTests + AudioRecorderUnitTests)..."
 	@swift test --filter AudioEngineGraphTests --skip-build 2>&1
+	@swift test --filter AudioRecorderUnitTests --skip-build 2>&1
 
 # Build and run the application
 run: build kill
