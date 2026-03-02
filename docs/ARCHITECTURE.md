@@ -23,9 +23,9 @@ Sources/
 Приложение использует SwiftData для сохранения записей.
 - **Модель**: `Recording` (в `Sources/Model/Recording.swift`).
 - **Контейнер**: Инициализируется в `RecodApp.swift`.
-- **Внедрение**: Передается через `.modelContainer` в WindowGroup. `ModelContext` также внедряется в `AppState` для немедленного сохранения новых записей.
+- **Внедрение**: Передается через `.modelContainer` в WindowGroup. `ModelContext` также внедряется в `RecordingOrchestrator` для немедленного сохранения новых записей.
 - **Использование**: Views используют `@Query` для чтения и `@Environment(\.modelContext)` для записи/удаления.
-- **Реактивность**: Когда запись завершается, `AppState` создает объект `Recording` и вставляет его в контекст. `HistoryView` (наблюдающий через `@Query`) обновляется мгновенно.
+- **Реактивность**: Когда запись завершается, `RecordingOrchestrator` создает объект `Recording` и вставляет его в контекст. `HistoryView` (наблюдающий через `@Query`) обновляется мгновенно.
 
 ## Аудио Подсистема
 Запись и воспроизведение аудио обрабатываются `AudioPlayer` и `AudioRecorder`.
@@ -51,8 +51,8 @@ Sources/
 - **Очистка**: Автоматическое удаление служебных токенов модели (`<|...|>`) перед сохранением.
 
 ### Overlay State Flow
-- Глобальный UI-стейт находится в `AppState` (`overlayStatus`, `overlayAudioLevel`).
-- Во время записи `AppState` подписан на `audioRecorder.$audioLevel`, что дает плавную амплитуду для `OverlayView`.
+- Глобальный UI-стейт находится в `RecordingOrchestrator` (`overlayStatus`, `overlayAudioLevel`).
+- Во время записи `RecordingOrchestrator` подписан на `audioRecorder.$audioLevel`, что дает плавную амплитуду для `OverlayView`.
 - При остановке записи `overlayStatus` немедленно переключается в `.transcribing`, чтобы микрофон и ripple исчезали без паузы.
 - `OverlayView` использует event-driven burst-анимацию: волны порождаются на росте громкости и усиливаются при более высокой амплитуде речи.
 

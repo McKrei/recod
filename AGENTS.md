@@ -388,3 +388,10 @@ Both suites require signing with `audio-input` entitlement (handled by `Makefile
 - **Always** stop and nil the engine in `tearDown()` to release the microphone.
 - If a test requires `engine.inputNode`, document that it needs built-in mic as default input.
 - For rate-probe tests, use the CoreAudio helper functions — not `AVAudioEngine`.
+
+## 21. MCP Browser & Web Tokens (Troubleshooting)
+> **Контекст от пользователя:** Периодически при запуске браузера (Playwright/MCP) может слетать авторизация (не пройден логин), если пользователь случайно вышел из системы.
+
+- **Refresh Token:** Скорее всего живёт вечно и проблема не в нём.
+- **Решение:** Если браузер открывается без авторизации — нужно просто обновить/поменять токен сессии (или перелогиниться).
+- **Действия ассистента:** Если проблема с доступом в браузере повторяется, не пытаться чинить код `recod`, а сразу проверять токены авторизации браузерной сессии MCP, так как сессия могла протухнуть.
