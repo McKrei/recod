@@ -75,7 +75,7 @@ public class AudioRecorder: NSObject, ObservableObject, @unchecked Sendable {
     // Config
     public var recordSystemAudio: Bool = false
 
-    /// True while prewarm() Task is running. startRecording() waits for it to finish.
+    /// True while prepareAudio() Task is running. startRecording() waits for it to finish.
     private var isPrewarming = false
 
     @Published public var isRecording = false
@@ -105,30 +105,55 @@ public class AudioRecorder: NSObject, ObservableObject, @unchecked Sendable {
         super.init()
     }
 
-    /// Pre-warms the audio engine to trigger hardware init and permission prompts.
-    public func prewarm() {
-        // Force mic-only graph for pre-warm
-        let savedSysAudio = recordSystemAudio
-        recordSystemAudio = false
+    /// Prepares the audio engine at app launch so the first recording works immediately.
+    ///
+    /// Unlike the old prewarm() approach, this method does NOT start and stop the engine —
+    /// that pattern caused macOS to "remember" the wrong hardware sample rate, requiring a
+    /// second recording attempt to get the correct 48kHz input format.
+    ///
+    /// Instead we:
+    ///   1. Request mic permission (no engine needed)
+    ///   2. Align input/output sample rates via CoreAudio (no engine needed)
+    ///   3. Build the graph and start the engine — then LEAVE IT RUNNING idle
+    ///
+    /// The engine sits idle (no tap, no file) until startRecording() installs a tap.
+    /// startRecording() sees graphInitialized=true and skips the entire setup/alignment phase.
+    public func prepareAudio() {
         isPrewarming = true
-
-        setupGraph()
         Task {
-            do {
-                engine?.prepare()
-                try engine?.start()
-                Log("AudioRecorder engine pre-warmed for 1s...")
-                try await Task.sleep(nanoseconds: 1_000_000_000)
-                engine?.stop()
-                teardownGraph()
-                // Give macOS time to fully release the mic hardware after teardown
-                try? await Task.sleep(nanoseconds: 300_000_000)
-                Log("AudioRecorder engine stopped and released after pre-warm")
-            } catch {
-                Log("AudioRecorder pre-warm engine start failed: \(error)", level: .error)
-                teardownGraph()
+            // Step 1: request permission without touching AVAudioEngine
+            let granted = await requestPermission()
+            guard granted else {
+                Log("prepareAudio: mic permission denied — skipping graph setup", level: .warning)
+                isPrewarming = false
+                return
             }
+
+            // Step 2: align rates via CoreAudio before any engine touches the hardware
+            let inputRate = coreAudioDefaultInputSampleRate()
+            let outputRate = coreAudioDefaultOutputSampleRate()
+            if inputRate > 0 && outputRate > 0 && inputRate != outputRate {
+                Log("prepareAudio: rate mismatch \(inputRate)Hz input vs \(outputRate)Hz output — aligning")
+                alignOutputSampleRate(to: inputRate)
+                // Wait for CoreAudio to propagate asynchronously
+                try? await Task.sleep(nanoseconds: 300_000_000)
+            }
+
+            // Step 3: build graph with mic-only (system audio is added later if needed)
+            let savedSysAudio = recordSystemAudio
+            recordSystemAudio = false
+            setupGraph()
             recordSystemAudio = savedSysAudio
+
+            guard let eng = engine else {
+                Log("prepareAudio: engine is nil after setupGraph", level: .error)
+                isPrewarming = false
+                return
+            }
+
+            eng.prepare()
+            Log("prepareAudio: engine prepared (not started) — graph ready for recording")
+
             isPrewarming = false
         }
     }
@@ -159,17 +184,17 @@ public class AudioRecorder: NSObject, ObservableObject, @unchecked Sendable {
         let granted = await requestPermission()
         guard granted else { throw AudioRecorderError.permissionDenied }
 
-        // Wait for prewarm to fully finish (including its post-teardown hardware-release pause).
-        // Without this, startRecording may try to build a new graph while macOS still holds
-        // the mic hardware from the prewarm session — causing installTap to receive 0 buffers.
+        // Wait for prepareAudio() to finish if it is still running.
+        // prepareAudio builds the graph and starts the engine; we must not start a second
+        // engine or touch the graph until it completes.
         if isPrewarming {
-            Log("Waiting for prewarm to complete before starting recording...")
-            let deadline = Date().addingTimeInterval(4.0)
+            Log("startRecording: waiting for prepareAudio() to finish...")
+            let deadline = Date().addingTimeInterval(5.0)
             while isPrewarming && Date() < deadline {
                 try await Task.sleep(nanoseconds: 100_000_000)
             }
             if isPrewarming {
-                Log("Prewarm did not finish in time — proceeding anyway", level: .warning)
+                Log("prepareAudio did not finish in time — proceeding anyway", level: .warning)
             }
         }
 
@@ -180,23 +205,28 @@ public class AudioRecorder: NSObject, ObservableObject, @unchecked Sendable {
             }
         }
 
+        // If system-audio config changed since prepareAudio built the graph, rebuild.
+        // Also add a short pause so macOS releases hardware before the new engine starts.
         if graphInitialized && graphIncludesSystemAudio != recordSystemAudio {
-            Log("System audio config changed, rebuilding graph...")
+            Log("System audio config changed — rebuilding graph...")
+            engine?.stop()
             teardownGraph()
-            // Give macOS time to release hardware after teardown before building new graph
             try await Task.sleep(nanoseconds: 200_000_000)
         }
 
-        // CRITICAL: Align output device sample rate BEFORE building the graph.
-        // AVAudioEngine reads device sample rates at graph construction time (when inputNode/mainMixerNode
-        // are first accessed). If input (BT HFP = 16kHz) != output (A2DP = 44100Hz) at that moment,
-        // the engine will silently build a broken render graph — installTap receives zero buffers.
-        //
-        // IMPORTANT: Do NOT use a probe AVAudioEngine to read rates — accessing inputNode on any
-        // AVAudioEngine instance causes macOS to capture the mic hardware. When that probe engine is
-        // released and the real engine starts, the mic may still be "held", causing installTap to
-        // receive zero buffers. Instead, read rates directly via CoreAudio (no hardware capture).
+        // Only do rate alignment + graph setup if the graph is not already running.
+        // In the normal happy path prepareAudio() already did this — graphInitialized=true,
+        // engine is started, and we just need to install the tap and open the file.
         if !graphInitialized {
+            // CRITICAL: Align output device sample rate BEFORE building the graph.
+            // AVAudioEngine reads device sample rates at graph construction time (when inputNode/mainMixerNode
+            // are first accessed). If input (BT HFP = 16kHz) != output (A2DP = 44100Hz) at that moment,
+            // the engine will silently build a broken render graph — installTap receives zero buffers.
+            //
+            // IMPORTANT: Do NOT use a probe AVAudioEngine to read rates — accessing inputNode on any
+            // AVAudioEngine instance causes macOS to capture the mic hardware. When that probe engine is
+            // released and the real engine starts, the mic may still be "held", causing installTap to
+            // receive zero buffers. Instead, read rates directly via CoreAudio (no hardware capture).
             let inputRate = coreAudioDefaultInputSampleRate()
             let outputRate = coreAudioDefaultOutputSampleRate()
             if inputRate > 0 && outputRate > 0 && inputRate != outputRate {
@@ -205,16 +235,26 @@ public class AudioRecorder: NSObject, ObservableObject, @unchecked Sendable {
                 // Wait for CoreAudio to propagate the change before AVAudioEngine reads device rates
                 try await Task.sleep(nanoseconds: 300_000_000)
             }
-        }
 
-        setupGraph()
+            setupGraph()
+
+            guard let eng = engine else { throw AudioRecorderError.setupFailed }
+            eng.prepare()
+            do {
+                try eng.start()
+            } catch {
+                Log("Engine start failed: \(error)", level: .error)
+                throw AudioRecorderError.setupFailed
+            }
+        } else if graphIncludesSystemAudio != recordSystemAudio {
+            // This branch is unreachable here (handled above), but kept as safety net.
+            Log("startRecording: graph/sysAudio mismatch after rebuild guard — this is a bug", level: .error)
+        }
 
         guard let engine = engine, let mixer = recordingMixer else {
             throw AudioRecorderError.setupFailed
         }
 
-        engine.prepare()
-        
         let tapFormat = mixer.outputFormat(forBus: 0)
         Log("Tap format: \(tapFormat.sampleRate)Hz, \(tapFormat.channelCount)ch")
 
@@ -272,11 +312,14 @@ public class AudioRecorder: NSObject, ObservableObject, @unchecked Sendable {
         }
         tapInstalled = true
 
-        do {
-            try engine.start()
-        } catch {
-            Log("Engine start failed: \(error)", level: .error)
-            throw AudioRecorderError.setupFailed
+        // Start engine only if it is not already running (prepareAudio() may have started it).
+        if !engine.isRunning {
+            do {
+                try engine.start()
+            } catch {
+                Log("Engine start failed: \(error)", level: .error)
+                throw AudioRecorderError.setupFailed
+            }
         }
 
         // Watchdog: verify tap is actually receiving audio within 2 seconds.

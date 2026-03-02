@@ -107,8 +107,8 @@ class AppState: ObservableObject {
     }
 
     /// Pre-warms the audio recorder to avoid "cold start" delays.
-    func prewarmAudio() {
-        audioRecorder.prewarm()
+    func prepareAudio() {
+        audioRecorder.prepareAudio()
     }
 
     func toggleRecording() {

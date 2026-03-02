@@ -19,8 +19,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         setupOverlayWindow()
         setupSignalHandlers()
 
-        // Pre-warm audio engine to avoid first recording being empty
-        AppState.shared.prewarmAudio()
+        // Prepare audio engine at launch: request permission, align sample rates, build graph.
+        // The engine stays running idle so the first recording starts immediately without a cold-start delay.
+        AppState.shared.prepareAudio()
 
         // Observe AppState
         Task { @MainActor in
