@@ -75,6 +75,9 @@ public class AudioRecorder: NSObject, ObservableObject, @unchecked Sendable {
     // Config
     public var recordSystemAudio: Bool = false
 
+    /// True while prewarm() Task is running. startRecording() waits for it to finish.
+    private var isPrewarming = false
+
     @Published public var isRecording = false
     @Published public private(set) var audioLevel: Float = 0
     public var currentRecordingURL: URL? { audioFile?.url }
@@ -107,6 +110,7 @@ public class AudioRecorder: NSObject, ObservableObject, @unchecked Sendable {
         // Force mic-only graph for pre-warm
         let savedSysAudio = recordSystemAudio
         recordSystemAudio = false
+        isPrewarming = true
 
         setupGraph()
         Task {
@@ -117,12 +121,15 @@ public class AudioRecorder: NSObject, ObservableObject, @unchecked Sendable {
                 try await Task.sleep(nanoseconds: 1_000_000_000)
                 engine?.stop()
                 teardownGraph()
+                // Give macOS time to fully release the mic hardware after teardown
+                try? await Task.sleep(nanoseconds: 300_000_000)
                 Log("AudioRecorder engine stopped and released after pre-warm")
             } catch {
                 Log("AudioRecorder pre-warm engine start failed: \(error)", level: .error)
                 teardownGraph()
             }
             recordSystemAudio = savedSysAudio
+            isPrewarming = false
         }
     }
 
@@ -152,6 +159,20 @@ public class AudioRecorder: NSObject, ObservableObject, @unchecked Sendable {
         let granted = await requestPermission()
         guard granted else { throw AudioRecorderError.permissionDenied }
 
+        // Wait for prewarm to fully finish (including its post-teardown hardware-release pause).
+        // Without this, startRecording may try to build a new graph while macOS still holds
+        // the mic hardware from the prewarm session — causing installTap to receive 0 buffers.
+        if isPrewarming {
+            Log("Waiting for prewarm to complete before starting recording...")
+            let deadline = Date().addingTimeInterval(4.0)
+            while isPrewarming && Date() < deadline {
+                try await Task.sleep(nanoseconds: 100_000_000)
+            }
+            if isPrewarming {
+                Log("Prewarm did not finish in time — proceeding anyway", level: .warning)
+            }
+        }
+
         if recordSystemAudio {
             guard hasScreenCapturePermission() else {
                 Log("Screen capture permission denied — cannot record system audio", level: .error)
@@ -162,6 +183,8 @@ public class AudioRecorder: NSObject, ObservableObject, @unchecked Sendable {
         if graphInitialized && graphIncludesSystemAudio != recordSystemAudio {
             Log("System audio config changed, rebuilding graph...")
             teardownGraph()
+            // Give macOS time to release hardware after teardown before building new graph
+            try await Task.sleep(nanoseconds: 200_000_000)
         }
 
         // CRITICAL: Align output device sample rate BEFORE building the graph.

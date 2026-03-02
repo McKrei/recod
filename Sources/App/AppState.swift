@@ -217,6 +217,11 @@ class AppState: ObservableObject {
                 }
             } catch {
                 await FileLogger.shared.log("Failed to start recording: \(error)", level: .error)
+                // Reset overlay state so the UI doesn't get stuck in .recording
+                overlayStatus = .error
+                isOverlayVisible = true
+                try? await Task.sleep(nanoseconds: 2_000_000_000)
+                isOverlayVisible = false
             }
         }
     }
