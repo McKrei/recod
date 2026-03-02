@@ -25,7 +25,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
 
         // Observe AppState
         Task { @MainActor in
-            AppState.shared.$isOverlayVisible
+            OverlayState.shared.$isVisible
                 .sink { [weak self] visible in
                     if visible {
                         self?.showOverlay()
@@ -77,7 +77,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
             window.setFrameOrigin(NSPoint(x: x, y: y))
         }
 
-        let hostingView = NSHostingView(rootView: OverlayView(appState: AppState.shared))
+        let hostingView = NSHostingView(rootView: OverlayView())
         hostingView.sizingOptions = .intrinsicContentSize
         window.contentView = hostingView
 
@@ -100,11 +100,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
 
 struct MenuBarContent: View {
     @ObservedObject var appState: AppState
+    @ObservedObject var orchestrator: RecordingOrchestrator
     @ObservedObject var updaterManager: UpdaterManager
     @Environment(\.openWindow) var openWindow
 
     var body: some View {
-        Button(appState.isRecording ? "Stop Recording" : "Start Recording") {
+        Button(orchestrator.isRecording ? "Stop Recording" : "Start Recording") {
             appState.toggleRecording()
         }
         .keyboardShortcut("R")
@@ -142,6 +143,7 @@ struct MenuBarContent: View {
 struct RecodApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @StateObject private var appState = AppState.shared
+    @StateObject private var orchestrator = RecordingOrchestrator.shared
     @StateObject private var updaterManager = UpdaterManager()
     @StateObject private var launchAtLoginService = LaunchAtLoginService()
     @State private var audioPlayer = AudioPlayer()
@@ -168,14 +170,14 @@ struct RecodApp: App {
 
     var body: some Scene {
         MenuBarExtra {
-            MenuBarContent(appState: appState, updaterManager: updaterManager)
+            MenuBarContent(appState: appState, orchestrator: orchestrator, updaterManager: updaterManager)
                 .modelContainer(modelContainer)
                 .environment(audioPlayer)
         } label: {
             // Change pointSize value to adjust icon size (e.g. 20)
             let config = NSImage.SymbolConfiguration(pointSize: 20, weight: .regular)
             let image = NSImage(
-                systemSymbolName: appState.isRecording ? "record.circle.fill" : "mic.circle",
+                systemSymbolName: orchestrator.isRecording ? "record.circle.fill" : "mic.circle",
                 accessibilityDescription: nil
             )?.withSymbolConfiguration(config)
 

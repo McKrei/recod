@@ -8,12 +8,16 @@
 import SwiftUI
 
 struct OverlayView: View {
-    @ObservedObject var appState: AppState
+    @ObservedObject var overlayState: OverlayState
     @State private var isUIReady = false
     @State private var readyTask: Task<Void, Never>?
     @State private var rippleBursts: [RippleBurst] = []
     @State private var lastBurstTime: TimeInterval = 0
     @State private var previousVisualLevel: CGFloat = 0
+
+    init(overlayState: OverlayState = OverlayState.shared) {
+        self.overlayState = overlayState
+    }
 
     var body: some View {
         ZStack {
@@ -21,28 +25,25 @@ struct OverlayView: View {
         }
         .frame(width: AppTheme.overlayContainerSize, height: AppTheme.overlayContainerSize)
         .animation(.spring(response: AppTheme.overlayStateSpringResponse, dampingFraction: AppTheme.overlayStateSpringDamping), value: isUIReady)
-        .animation(.spring(response: AppTheme.overlayStateSpringResponse, dampingFraction: AppTheme.overlayStateSpringDamping), value: appState.overlayStatus)
+        .animation(.spring(response: AppTheme.overlayStateSpringResponse, dampingFraction: AppTheme.overlayStateSpringDamping), value: overlayState.status)
         .onAppear {
-            scheduleRecordingReady()
+            if overlayState.status == .recording {
+                scheduleRecordingReady()
+            }
         }
         .onDisappear {
             readyTask?.cancel()
             readyTask = nil
         }
-        .onChange(of: appState.isRecording) { _, isRecording in
-            if isRecording {
+        .onChange(of: overlayState.status) { _, newStatus in
+            if newStatus == .recording {
                 scheduleRecordingReady()
             } else {
                 isUIReady = false
                 resetRippleState()
             }
         }
-        .onChange(of: appState.overlayStatus) { _, newStatus in
-            if newStatus != .recording {
-                resetRippleState()
-            }
-        }
-        .onChange(of: appState.overlayAudioLevel) { _, level in
+        .onChange(of: overlayState.audioLevel) { _, level in
             registerRippleBurst(with: level)
         }
     }
@@ -50,17 +51,17 @@ struct OverlayView: View {
     // MARK: - Status Views
 
     private var audioLevel: CGFloat {
-        CGFloat(min(max(appState.overlayAudioLevel, 0), 1))
+        CGFloat(min(max(overlayState.audioLevel, 0), 1))
     }
 
     @ViewBuilder
     private var statusContent: some View {
-        switch appState.overlayStatus {
+        switch overlayState.status {
         case .recording:
             recordingContent
                 .transition(.scale(scale: AppTheme.overlayRecordingTransitionScale).combined(with: .opacity))
         case .transcribing:
-            transcribingContent
+            TranscribingIndicator()
                 .transition(.opacity)
         case .success:
             Image(systemName: "checkmark.seal.fill")
@@ -72,7 +73,7 @@ struct OverlayView: View {
                 .symbolEffect(.bounce, options: .speed(1.2))
                 .transition(.scale.combined(with: .opacity))
         case .error:
-            if let message = appState.overlayErrorMessage {
+            if let message = overlayState.errorMessage {
                 VStack(spacing: 6) {
                     Image(systemName: "bluetooth.slash")
                         .font(.system(size: AppTheme.overlayErrorIconSize * 0.75, weight: .bold))
@@ -131,7 +132,10 @@ struct OverlayView: View {
     }
 
     private var visualLevel: CGFloat {
-        visualLevel(for: audioLevel)
+        let raw = audioLevel
+        let gated = max(raw - AppTheme.overlayLevelGateThreshold, 0) / AppTheme.overlayLevelGateRange
+        let boosted = pow(gated, AppTheme.overlayLevelCurvePower)
+        return min(max(boosted, 0), 1)
     }
 
     private func minIdleIntensity(for level: CGFloat) -> CGFloat {
@@ -174,36 +178,13 @@ struct OverlayView: View {
         }
     }
 
-    private var transcribingContent: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / AppTheme.overlayTimelineFPS, paused: false)) { context in
-            let time = context.date.timeIntervalSinceReferenceDate
-            let rotation = time * AppTheme.overlayTranscribingRotationSpeed
-
-            ZStack {
-                Circle()
-                    .fill(.red.opacity(0.95))
-                    .frame(width: AppTheme.overlayTranscribingCenterDotSize, height: AppTheme.overlayTranscribingCenterDotSize)
-                    .shadow(color: .red.opacity(0.45), radius: 7, x: 0, y: 0)
-
-                ForEach(0 ..< 3, id: \.self) { index in
-                    let angle = rotation + (Double(index) * (2 * .pi / 3))
-                    Circle()
-                        .fill(.red.opacity(index == 0 ? 0.95 : 0.78))
-                        .frame(width: AppTheme.overlayTranscribingOrbitDotSize, height: AppTheme.overlayTranscribingOrbitDotSize)
-                        .offset(x: cos(angle) * AppTheme.overlayTranscribingOrbitRadius, y: sin(angle) * AppTheme.overlayTranscribingOrbitRadius)
-                        .shadow(color: .red.opacity(0.35), radius: 6, x: 0, y: 0)
-                }
-            }
-        }
-    }
-
     // MARK: - Burst Logic
 
     private func registerRippleBurst(with levelValue: Float) {
-        guard appState.overlayStatus == .recording, isUIReady else { return }
+        guard overlayState.status == .recording, isUIReady else { return }
 
         let now = Date.timeIntervalSinceReferenceDate
-        let current = visualLevel(for: CGFloat(min(max(levelValue, 0), 1)))
+        let current = visualLevel
         rippleBursts.removeAll { now - $0.startTime > AppTheme.overlayBurstDuration }
 
         let rising = current - previousVisualLevel
@@ -232,12 +213,6 @@ struct OverlayView: View {
         }
 
         previousVisualLevel = current
-    }
-
-    private func visualLevel(for raw: CGFloat) -> CGFloat {
-        let gated = max(raw - AppTheme.overlayLevelGateThreshold, 0) / AppTheme.overlayLevelGateRange
-        let boosted = pow(gated, AppTheme.overlayLevelCurvePower)
-        return min(max(boosted, 0), 1)
     }
 
     private func burstProgress(for burst: RippleBurst, at time: TimeInterval) -> CGFloat? {
@@ -341,8 +316,33 @@ private struct RippleBurst: Identifiable {
     let intensity: CGFloat
 }
 
+struct TranscribingIndicator: View {
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1.0 / AppTheme.overlayTimelineFPS, paused: false)) { context in
+            let time = context.date.timeIntervalSinceReferenceDate
+            let rotation = time * AppTheme.overlayTranscribingRotationSpeed
+
+            ZStack {
+                Circle()
+                    .fill(.red.opacity(0.95))
+                    .frame(width: AppTheme.overlayTranscribingCenterDotSize, height: AppTheme.overlayTranscribingCenterDotSize)
+                    .shadow(color: .red.opacity(0.45), radius: 7, x: 0, y: 0)
+
+                ForEach(0 ..< 3, id: \.self) { index in
+                    let angle = rotation + (Double(index) * (2 * .pi / 3))
+                    Circle()
+                        .fill(.red.opacity(index == 0 ? 0.95 : 0.78))
+                        .frame(width: AppTheme.overlayTranscribingOrbitDotSize, height: AppTheme.overlayTranscribingOrbitDotSize)
+                        .offset(x: cos(angle) * AppTheme.overlayTranscribingOrbitRadius, y: sin(angle) * AppTheme.overlayTranscribingOrbitRadius)
+                        .shadow(color: .red.opacity(0.35), radius: 6, x: 0, y: 0)
+                }
+            }
+        }
+    }
+}
+
 #Preview {
-    OverlayView(appState: AppState())
+    OverlayView()
         .padding()
         .background(Color.blue)
 }
