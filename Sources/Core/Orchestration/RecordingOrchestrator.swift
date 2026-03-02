@@ -265,11 +265,14 @@ final class RecordingOrchestrator: ObservableObject {
             try context.save()
 
             await FileLogger.shared.log("Transcription (\(engine.displayName)) completed for: \(url.lastPathComponent)")
-            await OverlayState.shared.showSuccess()
-
+            
+            // Вставляем текст сразу же, чтобы юзер не ждал конца анимации. 
+            // Это запустится параллельно с отображением галочки.
             Task {
                 await ClipboardService.shared.insertText(finalText, preserveClipboard: !saveToClipboard)
             }
+
+            await OverlayState.shared.showSuccess()
         } catch {
             recording.transcriptionStatus = .failed
             try? context.save()

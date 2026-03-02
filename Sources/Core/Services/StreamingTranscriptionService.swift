@@ -74,30 +74,30 @@ final class StreamingTranscriptionService: ObservableObject {
                         if let lastConfirmed = toConfirm.last {
                             lastConfirmedEndSeconds = lastConfirmed.end
                             let newConfirmed = toConfirm.map {
-                                TranscriptionSegment(start: Double($0.start), end: Double($0.end), text: self.cleanTranscriptionText($0.text))
+                                TranscriptionSegment(start: Double($0.start), end: Double($0.end), text: TranscriptionFormatter.cleanSpecialTokens($0.text))
                             }
                             confirmedSegments.append(contentsOf: newConfirmed)
                         }
-
-                        let remainingText = remaining.map { self.cleanTranscriptionText($0.text) }.joined(separator: " ")
+ 
+                        let remainingText = remaining.map { TranscriptionFormatter.cleanSpecialTokens($0.text) }.joined(separator: " ")
                         let confirmedText = confirmedSegments.map { $0.text }.joined(separator: " ")
-
+ 
                         recording.liveTranscription = [confirmedText, remainingText].filter { !$0.isEmpty }.joined(separator: " ")
-
+ 
                         let remainingSegments = remaining.map {
-                            TranscriptionSegment(start: Double($0.start), end: Double($0.end), text: self.cleanTranscriptionText($0.text))
+                            TranscriptionSegment(start: Double($0.start), end: Double($0.end), text: TranscriptionFormatter.cleanSpecialTokens($0.text))
                         }
                         recording.segments = confirmedSegments + remainingSegments
-
+ 
                     } else {
                         // Not enough to confirm, just show as live
-                        let allText = allSegments.map { self.cleanTranscriptionText($0.text) }.joined(separator: " ")
+                        let allText = allSegments.map { TranscriptionFormatter.cleanSpecialTokens($0.text) }.joined(separator: " ")
                         let confirmedText = confirmedSegments.map { $0.text }.joined(separator: " ")
-
+ 
                         recording.liveTranscription = [confirmedText, allText].filter { !$0.isEmpty }.joined(separator: " ")
-
+ 
                         let newSegments = allSegments.map {
-                            TranscriptionSegment(start: Double($0.start), end: Double($0.end), text: self.cleanTranscriptionText($0.text))
+                            TranscriptionSegment(start: Double($0.start), end: Double($0.end), text: TranscriptionFormatter.cleanSpecialTokens($0.text))
                         }
                         recording.segments = confirmedSegments + newSegments
                     }
@@ -116,12 +116,5 @@ final class StreamingTranscriptionService: ObservableObject {
         streamTask?.cancel()
         streamTask = nil
     }
-
-    private func cleanTranscriptionText(_ text: String) -> String {
-        let pattern = "<\\|.*?\\|>"
-        guard let regex = try? NSRegularExpression(pattern: pattern, options: []) else { return text }
-        let range = NSRange(text.startIndex..., in: text)
-        let cleaned = regex.stringByReplacingMatches(in: text, options: [], range: range, withTemplate: "")
-        return cleaned.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
 }
+

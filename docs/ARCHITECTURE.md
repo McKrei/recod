@@ -1,77 +1,66 @@
 # Архитектура Приложения
 
 ## Обзор
-Recod — это нативное приложение для macOS, созданное с использованием **SwiftUI 6** и **SwiftData**. Оно следует стандартному паттерну MVVM (Model-View-ViewModel), с сильным акцентом на современную конкурентность (`async/await`) и декларативный UI.
+Recod — это нативное приложение для macOS, созданное с использованием **SwiftUI 6** и **SwiftData**. Оно следует модульному паттерну MVVM (Model-View-ViewModel), с четким разделением ответственностей и использованием современной конкурентности (`async/await`).
 
 ## Структура Проекта
 
 ```
 Sources/
-├── App/                 # Точка входа (RecodApp.swift), Глобальное состояние
+├── App/                 # Точка входа (RecodApp.swift), AppState (конфигурация)
 ├── Features/            # Модули функциональности
 │   ├── Settings/        # Экран настроек и его компоненты
-│   └── History/         # Логика и views истории
+│   ├── History/         # Логика и views истории
+│   └── Overlay/         # Плавающее окно статуса записи
+│       ├── OverlayState.swift  # Состояние оверлея (isVisible, status)
+│       └── Components/         # Подкомпоненты (MicCore, Ripples, Loader)
 ├── Core/
-│   ├── Utilities/       # Помощники (WindowAccessor и т.д.)
-│   └── Models/          # Общие модели (HotKeyShortcut)
+│   ├── Orchestration/   # RecordingOrchestrator (бизнес-логика записи и транскрипции)
+│   ├── Audio/           # Низкоуровневая работа со звуком
+│   │   ├── AudioRecorder.swift       # Фасад для AVAudioEngine
+│   │   ├── AudioLevelMonitor.swift   # Расчет громкости (RMS/vDSP)
+│   │   ├── AudioStreamBuffer.swift   # Буферизация для Whisper (16kHz)
+│   │   └── CoreAudioDeviceManager.swift # Фиксы Bluetooth HFP/Sample Rate
+│   ├── Services/        # Сервисы (Transcription, Clipboard, Formatter)
+│   ├── Utilities/       # Помощники (WindowAccessor, FileLogger)
+│   └── Models/          # Общие модели (HotKeyShortcut, TranscriptionEngine)
 ├── DesignSystem/        # UI Константы (AppTheme) и Стили
-├── UI/                  # Переиспользуемые UI компоненты (KeyView)
-└── Model/               # SwiftData Модели (Recording.swift)
+└── Model/               # SwiftData Модели (Recording.swift, ReplacementRule.swift)
 ```
 
 ## Хранение Данных (SwiftData)
-Приложение использует SwiftData для сохранения записей.
-- **Модель**: `Recording` (в `Sources/Model/Recording.swift`).
+Приложение использует SwiftData для сохранения записей и правил замены текста.
+- **Модели**: `Recording`, `ReplacementRule`.
 - **Контейнер**: Инициализируется в `RecodApp.swift`.
-- **Внедрение**: Передается через `.modelContainer` в WindowGroup. `ModelContext` также внедряется в `RecordingOrchestrator` для немедленного сохранения новых записей.
-- **Использование**: Views используют `@Query` для чтения и `@Environment(\.modelContext)` для записи/удаления.
-- **Реактивность**: Когда запись завершается, `RecordingOrchestrator` создает объект `Recording` и вставляет его в контекст. `HistoryView` (наблюдающий через `@Query`) обновляется мгновенно.
+- **Оркестрация**: `RecordingOrchestrator` внедряет `ModelContext` для сохранения результатов транскрипции.
+- **Реактивность**: Views используют `@Query` для автоматического обновления списков при изменении базы.
 
-## Аудио Подсистема
-Запись и воспроизведение аудио обрабатываются `AudioPlayer` и `AudioRecorder`.
+## Аудио Подсистема (Core/Audio)
+Запись аудио разделена на специализированные модули для предотвращения раздувания кода (Massive View Controller/Class):
 
-### Запись (AudioRecorder)
-Класс `AudioRecorder` управляет процессом захвата звука:
-- **Пересоздание графа на сессию**: `AVAudioEngine` создается в `setupGraph()` и полностью уничтожается в `teardownGraph()` после записи. Это критично для корректного освобождения микрофона (Bluetooth HFP/A2DP).
-- **Умный прогрев (Pre-warming)**: При старте приложения выполняется кратковременный запуск движка (1 сек), чтобы инициализировать оборудование (HAL) и гарантировать, что первая запись не будет пустой.
-- **Приватность**: После прогрева и после каждой записи аудио-движок полностью останавливается (`engine.stop()`), что отключает системный индикатор использования микрофона.
-- **Двухканальная запись (Стерео)**:
-  - **Левый канал**: Микрофон.
-  - **Правый канал**: Системный звук (через `ScreenCaptureKit` и `StreamOutput`).
-- **Микширование**:
-  - `mainMixerNode` движка заглушен (`outputVolume = 0`).
-  - Используется отдельный `recordingMixer`, с которого снимается tap только во время активной записи.
-- **Формат**: TAP устанавливается с `format: nil` (нативный формат устройства), WAV сохраняется в native sample rate (обычно 48kHz, 16-bit PCM). Форсировать 16kHz в графе нельзя.
-- **UI Audio Level Pipeline**: в tap вычисляется RMS-громкость (`Accelerate/vDSP`), далее сигнал нормализуется и сглаживается в `audioLevel` (~20 Гц) для реактивной анимации overlay без нагрузки на UI.
+- **AudioRecorder**: Управляет графом `AVAudioEngine`. Создает и уничтожает движок на каждую сессию (критично для Bluetooth).
+- **CoreAudioDeviceManager**: Использует низкоуровневое API CoreAudio для выравнивания Sample Rate между входом и выходом. Это решает проблему "молчания" AirPods в режиме HFP.
+- **AudioLevelMonitor**: Вычисляет сглаженную громкость (0...1) для анимации оверлея.
+- **AudioStreamBuffer**: В реальном времени конвертирует 48kHz стерео в 16kHz моно Float для WhisperKit/Parakeet.
 
-### Обзор Процесса
-- **Запись**: Стерео-микс (L: Microphone, R: System Audio) через `AVAudioEngine` и `ScreenCaptureKit`.
-- **Транскрибация**: WhisperKit (CoreML).
-- **Сегментация**: Сохранение детальных сегментов (`TranscriptionSegment`) с таймкодами (точность до 0.1с) в SwiftData. Это позволяет отображать поминутный разбор записи в истории.
-- **Очистка**: Автоматическое удаление служебных токенов модели (`<|...|>`) перед сохранением.
+## Бизнес-Логика (RecordingOrchestrator)
+Центральный узел приложения, координирующий поток данных:
+1.  **Старт**: Проверяет готовность моделей -> Инициализирует оверлей -> Запускает `AudioRecorder`.
+2.  **Стриминг**: Во время записи периодически забирает сэмплы из `AudioStreamBuffer` и отправляет в `StreamingTranscriptionService`.
+3.  **Стоп**: Останавливает запись -> Сохраняет WAV -> Запускает пакетную транскрипцию (`runBatchTranscription`).
+4.  **Завершение**: Применяет правила замены (`TextReplacementService`) -> Вставляет текст в активное приложение (`ClipboardService`) -> Показывает успех в оверлее.
 
-### Overlay State Flow
-- Глобальный UI-стейт находится в `RecordingOrchestrator` (`overlayStatus`, `overlayAudioLevel`).
-- Во время записи `RecordingOrchestrator` подписан на `audioRecorder.$audioLevel`, что дает плавную амплитуду для `OverlayView`.
-- При остановке записи `overlayStatus` немедленно переключается в `.transcribing`, чтобы микрофон и ripple исчезали без паузы.
-- `OverlayView` использует event-driven burst-анимацию: волны порождаются на росте громкости и усиливаются при более высокой амплитуде речи.
+## Транскрипция (Services)
+- **WhisperKit**: CoreML реализация Whisper. Поддерживает Context Biasing (Word Boosting) через инъекцию токенов.
+- **Parakeet**: NVIDIA модель для GPU-транскрипции.
+- **TranscriptionFormatter**: Общая логика очистки спец-токенов (`<|...|>`) и нормализации текста.
 
-### Воспроизведение
-Использует стандартный `AVAudioPlayer`.
+## UI и Дизайн (DesignSystem / Features)
+- **The Tahoe Look**: Дизайн-система на базе материалов (`.ultraThinMaterial`) и прозрачности.
+- **OverlayView**: Иерархия компонентов (`MicCore`, `VoiceAura`, `RipplePulse`), управляемая через `TimelineView` для 60 FPS анимаций.
+- **SettingsView**: Модульные страницы настроек с использованием `SettingsHeaderView` и `GlassRowStyle`.
 
-## Движок Транскрибации
-Транскрибация обрабатывается `TranscriptionService` на базе **WhisperKit** (CoreML/ANE).
-- Двухэтапный пайплайн: **detectLanguage** → **transcribe (task: .transcribe)** для предотвращения непреднамеренного перевода.
-- Модели скачиваются и управляются через `WhisperModelManager` (загрузчик WhisperKit).
-
-## Эффект "Стеклянного" Окна
-Для достижения вида "Superwhisper" (глубокая прозрачность):
-1.  **NSWindow**: Базовое окно настроено как `isOpaque = false` и `backgroundColor = .clear` через `WindowAccessor`.
-2.  **SwiftUI Background**: Корневое view применяет `.background(.ultraThinMaterial)`.
-3.  **Результат**: Обои рабочего стола пользователя просвечивают через размытый контент приложения.
-
-## Добавление Новых Функций
-1.  **Модель**: Определите структуры данных в `Sources/Model`.
-2.  **View**: Создайте UI в `Sources/Features/<FeatureName>`.
-3.  **Интеграция**: Добавьте в боковую панель `SettingsView` (если это настройка) или `MenuBarContent` (если это основное действие).
-4.  **Стиль**: Строго используйте `AppTheme` для констант верстки.
+## Ключевые Инварианты (НЕ НАРУШАТЬ)
+1.  **Никаких God Objects**: Логика должна быть вынесена в специализированные сервисы. `AppState` только для конфигурации.
+2.  **CoreAudio API для Rate Probe**: Никогда не создавайте `AVAudioEngine` только чтобы узнать Sample Rate — это захватывает микрофон.
+3.  **Вставка Текста Немедленно**: Текст должен вставляться в активное приложение сразу после готовности, не дожидаясь окончания анимации "Успех".

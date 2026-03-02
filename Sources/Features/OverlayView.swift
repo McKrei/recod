@@ -7,6 +7,8 @@
 
 import SwiftUI
 
+/// Main view for the floating overlay that shows recording/transcription status.
+/// Coordinates animations and sub-components based on `OverlayState`.
 struct OverlayView: View {
     @ObservedObject var overlayState: OverlayState
     @State private var isUIReady = false
@@ -27,9 +29,7 @@ struct OverlayView: View {
         .animation(.spring(response: AppTheme.overlayStateSpringResponse, dampingFraction: AppTheme.overlayStateSpringDamping), value: isUIReady)
         .animation(.spring(response: AppTheme.overlayStateSpringResponse, dampingFraction: AppTheme.overlayStateSpringDamping), value: overlayState.status)
         .onAppear {
-            if overlayState.status == .recording {
-                scheduleRecordingReady()
-            }
+            if overlayState.status == .recording { scheduleRecordingReady() }
         }
         .onDisappear {
             readyTask?.cancel()
@@ -50,10 +50,6 @@ struct OverlayView: View {
 
     // MARK: - Status Views
 
-    private var audioLevel: CGFloat {
-        CGFloat(min(max(overlayState.audioLevel, 0), 1))
-    }
-
     @ViewBuilder
     private var statusContent: some View {
         switch overlayState.status {
@@ -64,42 +60,11 @@ struct OverlayView: View {
             TranscribingIndicator()
                 .transition(.opacity)
         case .success:
-            Image(systemName: "checkmark.seal.fill")
-                .font(.system(size: AppTheme.overlaySuccessIconSize, weight: .semibold))
-                .foregroundStyle(
-                    LinearGradient(colors: [.mint.opacity(0.95), .green.opacity(0.85)], startPoint: .top, endPoint: .bottom)
-                )
-                .shadow(color: .green.opacity(0.32), radius: AppTheme.overlayStatusShadowRadius, x: 0, y: AppTheme.overlayStatusShadowY)
-                .symbolEffect(.bounce, options: .speed(1.2))
+            successIcon
                 .transition(.scale.combined(with: .opacity))
         case .error:
-            if let message = overlayState.errorMessage {
-                VStack(spacing: 6) {
-                    Image(systemName: "bluetooth.slash")
-                        .font(.system(size: AppTheme.overlayErrorIconSize * 0.75, weight: .bold))
-                        .foregroundStyle(
-                            LinearGradient(colors: [.orange.opacity(0.95), .red.opacity(0.88)], startPoint: .top, endPoint: .bottom)
-                        )
-                        .shadow(color: .red.opacity(0.35), radius: AppTheme.overlayStatusShadowRadius, x: 0, y: AppTheme.overlayStatusShadowY)
-                        .symbolEffect(.bounce, options: .speed(1.2))
-                    Text(message)
-                        .font(.system(size: 9, weight: .medium))
-                        .foregroundStyle(.white.opacity(0.85))
-                        .multilineTextAlignment(.center)
-                        .lineLimit(3)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
+            errorContent
                 .transition(.scale.combined(with: .opacity))
-            } else {
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .font(.system(size: AppTheme.overlayErrorIconSize, weight: .bold))
-                    .foregroundStyle(
-                        LinearGradient(colors: [.orange.opacity(0.95), .red.opacity(0.88)], startPoint: .top, endPoint: .bottom)
-                    )
-                    .shadow(color: .red.opacity(0.35), radius: AppTheme.overlayStatusShadowRadius, x: 0, y: AppTheme.overlayStatusShadowY)
-                    .symbolEffect(.bounce, options: .speed(1.2))
-                    .transition(.scale.combined(with: .opacity))
-            }
         }
     }
 
@@ -113,26 +78,63 @@ struct OverlayView: View {
                 let now = context.date.timeIntervalSinceReferenceDate
 
                 ZStack {
-                    ambientVoiceAura(intensity: leadIntensity)
+                    VoiceAuraView(intensity: leadIntensity)
 
                     ForEach(rippleBursts) { burst in
-                        if let progress = burstProgress(for: burst, at: now) {
-                            reactiveRipplePulse(progress: progress, intensity: burst.intensity)
+                        if let elapsed = burstElapsed(for: burst, at: now) {
+                            RipplePulseView(progress: elapsed, intensity: burst.intensity)
                         }
                     }
 
-                    micCore
+                    MicCoreView(audioLevel: Float(overlayState.audioLevel))
                 }
             }
         } else {
-            ProgressView()
-                .controlSize(.small)
-                .tint(.white)
+            ProgressView().controlSize(.small).tint(.white)
         }
     }
 
+    private var successIcon: some View {
+        Image(systemName: "checkmark.seal.fill")
+            .font(.system(size: AppTheme.overlaySuccessIconSize, weight: .semibold))
+            .foregroundStyle(
+                LinearGradient(colors: [.mint.opacity(0.95), .green.opacity(0.85)], startPoint: .top, endPoint: .bottom)
+            )
+            .shadow(color: .green.opacity(0.32), radius: AppTheme.overlayStatusShadowRadius, x: 0, y: AppTheme.overlayStatusShadowY)
+            .symbolEffect(.bounce, options: .speed(1.2))
+    }
+
+    @ViewBuilder
+    private var errorContent: some View {
+        if let message = overlayState.errorMessage {
+            VStack(spacing: 6) {
+                errorIcon
+                Text(message)
+                    .font(.system(size: 9, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.85))
+                    .multilineTextAlignment(.center)
+                    .lineLimit(3)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        } else {
+            errorIcon
+        }
+    }
+
+    private var errorIcon: some View {
+        Image(systemName: overlayState.errorMessage != nil ? "bluetooth.slash" : "exclamationmark.triangle.fill")
+            .font(.system(size: AppTheme.overlayErrorIconSize, weight: .bold))
+            .foregroundStyle(
+                LinearGradient(colors: [.orange.opacity(0.95), .red.opacity(0.88)], startPoint: .top, endPoint: .bottom)
+            )
+            .shadow(color: .red.opacity(0.35), radius: AppTheme.overlayStatusShadowRadius, x: 0, y: AppTheme.overlayStatusShadowY)
+            .symbolEffect(.bounce, options: .speed(1.2))
+    }
+
+    // MARK: - Animation Logic
+
     private var visualLevel: CGFloat {
-        let raw = audioLevel
+        let raw = CGFloat(min(max(overlayState.audioLevel, 0), 1))
         let gated = max(raw - AppTheme.overlayLevelGateThreshold, 0) / AppTheme.overlayLevelGateRange
         let boosted = pow(gated, AppTheme.overlayLevelCurvePower)
         return min(max(boosted, 0), 1)
@@ -141,44 +143,6 @@ struct OverlayView: View {
     private func minIdleIntensity(for level: CGFloat) -> CGFloat {
         level < AppTheme.overlayIdleIntensityThreshold ? AppTheme.overlayIdleIntensityValue : 0
     }
-
-    // MARK: - Recording Visuals
-
-    private var micCore: some View {
-        ZStack {
-            Circle()
-                .fill(
-                    LinearGradient(
-                        colors: [.red.opacity(0.92), .red.opacity(0.64)],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
-                .frame(width: AppTheme.overlayIconContainerSize, height: AppTheme.overlayIconContainerSize)
-                .overlay(
-                    Circle()
-                        .strokeBorder(.white.opacity(0.35), lineWidth: 0.8)
-                )
-                .overlay(
-                    Circle()
-                        .fill(
-                            RadialGradient(
-                                colors: [.white.opacity(0.35), .clear],
-                                center: .topLeading,
-                                startRadius: 0,
-                                endRadius: AppTheme.overlayIconContainerSize
-                            )
-                        )
-                )
-                .shadow(color: .red.opacity(0.35 + Double(audioLevel) * 0.35), radius: 10, x: 0, y: 3)
-
-            Image(systemName: "mic.fill")
-                .font(.system(size: AppTheme.overlayIconSize, weight: .semibold))
-                .foregroundStyle(.white.opacity(0.98))
-        }
-    }
-
-    // MARK: - Burst Logic
 
     private func registerRippleBurst(with levelValue: Float) {
         guard overlayState.status == .recording, isUIReady else { return }
@@ -199,150 +163,38 @@ struct OverlayView: View {
 
             if intensity > AppTheme.overlayLoudBurstThreshold {
                 rippleBursts.append(
-                    RippleBurst(
-                        startTime: now + AppTheme.overlayLoudBurstDelay,
-                        intensity: intensity * AppTheme.overlayLoudBurstIntensityScale
-                    )
+                    RippleBurst(startTime: now + AppTheme.overlayLoudBurstDelay, intensity: intensity * AppTheme.overlayLoudBurstIntensityScale)
                 )
             }
-
-            if rippleBursts.count > AppTheme.overlayBurstMaxCount {
-                rippleBursts.removeFirst(rippleBursts.count - AppTheme.overlayBurstMaxCount)
-            }
+            if rippleBursts.count > AppTheme.overlayBurstMaxCount { rippleBursts.removeFirst() }
             lastBurstTime = now
         }
-
         previousVisualLevel = current
     }
 
-    private func burstProgress(for burst: RippleBurst, at time: TimeInterval) -> CGFloat? {
+    private func burstElapsed(for burst: RippleBurst, at time: TimeInterval) -> CGFloat? {
         let elapsed = time - burst.startTime
         guard elapsed >= 0, elapsed <= AppTheme.overlayBurstDuration else { return nil }
         return CGFloat(elapsed / AppTheme.overlayBurstDuration)
     }
 
-    // MARK: - Drawing
-
-    private func reactiveRipplePulse(progress: CGFloat, intensity: CGFloat) -> some View {
-        let clamped = min(max(progress, 0), 1)
-        let expansion = AppTheme.overlayRippleExpansionBase + (clamped * (AppTheme.overlayRippleExpansionProgressScale + (AppTheme.overlayRippleExpansionIntensityScale * intensity)))
-        let alphaFalloff = pow(1 - clamped, AppTheme.overlayRippleOpacityFalloffPower)
-        let opacity = Double((AppTheme.overlayRippleOpacityBase + AppTheme.overlayRippleOpacityIntensityScale * intensity) * alphaFalloff)
-        let blur = AppTheme.overlayRippleBlurBase + (AppTheme.overlayRippleBlurProgressScale * clamped) + (AppTheme.overlayRippleBlurIntensityScale * intensity)
-        let lineWidth = max(
-            AppTheme.overlayRippleLineWidthMin,
-            (AppTheme.overlayRippleLineWidthBase + AppTheme.overlayRippleLineWidthIntensityScale * intensity) - (clamped * AppTheme.overlayRippleLineWidthProgressScale)
-        )
-        let tint = AppTheme.overlayRippleTintBase + (AppTheme.overlayRippleTintIntensityScale * intensity)
-
-        return Circle()
-            .stroke(
-                AngularGradient(
-                    colors: [
-                        .white.opacity(0.98),
-                        .pink.opacity(tint),
-                        .red.opacity(AppTheme.overlayRippleRedBaseOpacity + (AppTheme.overlayRippleRedIntensityOpacity * intensity)),
-                        .white.opacity(0.98)
-                    ],
-                    center: .center
-                ),
-                lineWidth: lineWidth
-            )
-            .frame(width: AppTheme.overlayCoreSize, height: AppTheme.overlayCoreSize)
-            .scaleEffect(expansion)
-            .opacity(opacity)
-            .blur(radius: blur)
-            .shadow(color: .white.opacity(opacity * 0.55), radius: 10, x: 0, y: 0)
-            .shadow(color: .red.opacity(opacity * 0.45), radius: 14, x: 0, y: 0)
-            .blendMode(.plusLighter)
-    }
-
-    private func ambientVoiceAura(intensity: CGFloat) -> some View {
-        let clamped = min(max(intensity, 0), 1)
-        let scale = AppTheme.overlayAuraScaleBase + clamped * AppTheme.overlayAuraScaleIntensity
-        let opacity = AppTheme.overlayAuraOpacityBase + Double(clamped) * AppTheme.overlayAuraOpacityIntensity
-        let blur = AppTheme.overlayAuraBlurBase + clamped * AppTheme.overlayAuraBlurIntensity
-
-        return Circle()
-            .stroke(
-                RadialGradient(
-                    colors: [
-                        .white.opacity(0.7),
-                        .red.opacity(AppTheme.overlayAuraRedBaseOpacity + AppTheme.overlayAuraRedIntensityOpacity * clamped),
-                        .clear
-                    ],
-                    center: .center,
-                    startRadius: 1,
-                    endRadius: AppTheme.overlayRippleMiddleSize
-                ),
-                lineWidth: AppTheme.overlayAuraStrokeWidth
-            )
-            .frame(width: AppTheme.overlayCoreSize, height: AppTheme.overlayCoreSize)
-            .scaleEffect(scale)
-            .opacity(opacity)
-            .blur(radius: blur)
-            .shadow(color: .red.opacity(AppTheme.overlayAuraShadowBase + AppTheme.overlayAuraShadowIntensity * clamped), radius: AppTheme.overlayAuraShadowRadius, x: 0, y: 0)
-            .animation(.easeOut(duration: AppTheme.overlayAuraAnimationDuration), value: clamped)
-    }
-
     private func resetRippleState() {
-        rippleBursts.removeAll()
-        lastBurstTime = 0
-        previousVisualLevel = 0
+        rippleBursts.removeAll(); lastBurstTime = 0; previousVisualLevel = 0
     }
-
-    // MARK: - Lifecycle
 
     private func scheduleRecordingReady() {
-        readyTask?.cancel()
-        isUIReady = false
-
+        readyTask?.cancel(); isUIReady = false
         readyTask = Task {
             try? await Task.sleep(nanoseconds: AppTheme.overlayReadyDelayNanoseconds)
             guard !Task.isCancelled else { return }
-            await MainActor.run {
-                withAnimation(.easeOut(duration: 0.24)) {
-                    isUIReady = true
-                }
-            }
-        }
-    }
-
-}
-
-private struct RippleBurst: Identifiable {
-    let id = UUID()
-    let startTime: TimeInterval
-    let intensity: CGFloat
-}
-
-struct TranscribingIndicator: View {
-    var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / AppTheme.overlayTimelineFPS, paused: false)) { context in
-            let time = context.date.timeIntervalSinceReferenceDate
-            let rotation = time * AppTheme.overlayTranscribingRotationSpeed
-
-            ZStack {
-                Circle()
-                    .fill(.red.opacity(0.95))
-                    .frame(width: AppTheme.overlayTranscribingCenterDotSize, height: AppTheme.overlayTranscribingCenterDotSize)
-                    .shadow(color: .red.opacity(0.45), radius: 7, x: 0, y: 0)
-
-                ForEach(0 ..< 3, id: \.self) { index in
-                    let angle = rotation + (Double(index) * (2 * .pi / 3))
-                    Circle()
-                        .fill(.red.opacity(index == 0 ? 0.95 : 0.78))
-                        .frame(width: AppTheme.overlayTranscribingOrbitDotSize, height: AppTheme.overlayTranscribingOrbitDotSize)
-                        .offset(x: cos(angle) * AppTheme.overlayTranscribingOrbitRadius, y: sin(angle) * AppTheme.overlayTranscribingOrbitRadius)
-                        .shadow(color: .red.opacity(0.35), radius: 6, x: 0, y: 0)
-                }
-            }
+            await MainActor.run { withAnimation(.easeOut(duration: 0.24)) { isUIReady = true } }
         }
     }
 }
 
 #Preview {
-    OverlayView()
-        .padding()
-        .background(Color.blue)
+    ZStack {
+        Color.blue
+        OverlayView()
+    }
 }

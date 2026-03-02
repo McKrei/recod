@@ -82,8 +82,8 @@ final class TranscriptionService {
 
         // Process results: join text and clean up special tokens
         let rawJoinedText = results.map { $0.text }.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
-        let text = cleanTranscriptionText(rawJoinedText)
-
+        let text = TranscriptionFormatter.cleanSpecialTokens(rawJoinedText)
+ 
         // Extract segments from TranscriptionResult.segments and clean their text
         let segments = results.flatMap { result in
             result.segments.map { segment in
@@ -91,7 +91,7 @@ final class TranscriptionService {
                     id: UUID(),
                     start: Double(segment.start),
                     end: Double(segment.end),
-                    text: cleanTranscriptionText(segment.text)
+                    text: TranscriptionFormatter.cleanSpecialTokens(segment.text)
                 )
             }
         }
@@ -102,20 +102,10 @@ final class TranscriptionService {
         await FileLogger.shared.log(String(format: "Inference completed: %.2fs", inferDuration))
         await FileLogger.shared.log(String(format: "Total process time: %.2fs", totalDuration))
         await FileLogger.shared.log("--- Transcription End ---")
-
+ 
         return (text, segments)
     }
-
-    /// Removes WhisperKit special tokens like <|startoftranscript|>, <|en|>, <|transcribe|>, etc.
-    /// These tokens sometimes appear in the output text and segments.
-    private func cleanTranscriptionText(_ text: String) -> String {
-        let pattern = "<\\|.*?\\|>"
-        guard let regex = try? NSRegularExpression(pattern: pattern, options: []) else { return text }
-        let range = NSRange(text.startIndex..., in: text)
-        let cleaned = regex.stringByReplacingMatches(in: text, options: [], range: range, withTemplate: "")
-        return cleaned.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
+ 
     private func waitForFileReady(url: URL) async throws -> AVAudioFramePosition {
         var lastError: Error?
 
