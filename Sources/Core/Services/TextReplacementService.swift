@@ -51,12 +51,14 @@ struct TextReplacementService {
                 options: .caseInsensitive
             ) else { continue }
             
+            let escapedReplacement = NSRegularExpression.escapedTemplate(for: rule.replacement)
+            
             let range = NSRange(location: 0, length: processedText.utf16.count)
             processedText = regex.stringByReplacingMatches(
                 in: processedText,
                 options: [],
                 range: range,
-                withTemplate: rule.replacement
+                withTemplate: escapedReplacement
             )
         }
         

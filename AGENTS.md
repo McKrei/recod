@@ -352,7 +352,29 @@ if inputFormat.channelCount >= 2 {
 6. **Rate alignment BEFORE `setupGraph()`** — engine reads device rates on first `inputNode` access.
 7. **300ms sleep after alignment** — CoreAudio applies rate change asynchronously.
 
-## 20. Testing Workflow (Audio Engine Tests)
+## 20. Testing Workflow & Guidelines
+
+**REFERENCE:** See `docs/TESTING.md` for full test suite documentation.
+
+### Core Testing Rules
+1. **Framework:** Use **Swift Testing** exclusively (`import Testing`, `@Suite`, `@Test`, `#expect`). **DO NOT** use `XCTest`.
+2. **Swift 6 Strict Concurrency:** All tests must be `Sendable`-safe. Use `@MainActor` for tests interacting with SwiftData models or UI classes.
+3. **Mocks:** Avoid heavy mocking frameworks. Prefer pure functions (Tier 1) and in-memory data structures (like `ModelContainer` for SwiftData).
+4. **SwiftData Models:** When testing `@Model` classes (e.g., `ReplacementRule`), instantiate them inside an in-memory `ModelContext`:
+   ```swift
+   let config = ModelConfiguration(isStoredInMemoryOnly: true)
+   let container = try! ModelContainer(for: ReplacementRule.self, configurations: config)
+   let context = ModelContext(container)
+   ```
+
+### Running Tests
+```bash
+make test
+```
+This command automatically:
+1. Builds the test target.
+2. Code-signs the test executable with the `audio-input` entitlement (CRITICAL for macOS to allow `AVAudioEngine` hardware capture).
+3. Runs all test suites (`AudioEngineGraphTests`, `AudioRecorderUnitTests`, `TextReplacementServiceTests`, etc.).
 
 ### Pre-requisite: Set Default Input to Built-in Mic
 BT HFP (16kHz input) causes `fullGraphTapReceivesBuffers` to crash with `Input HW format and tap format not matching`. Before running tests, always ensure the default input is the built-in microphone:
@@ -367,26 +389,10 @@ SwitchAudioSource -t input -s "MacBook Pro Microphone"
 SwitchAudioSource -t input -s "Микрофон MacBook Pro"
 ```
 
-### Running Tests
-```bash
-make test
-```
-This runs both test suites sequentially:
-1. `AudioEngineGraphTests` (4 integration tests, ~10s)
-2. `AudioRecorderUnitTests` (9 unit + integration tests, ~6s)
-
-Both suites require signing with `audio-input` entitlement (handled by `Makefile`).
-
-### Test Suite Summary
-| Suite | Count | What it tests |
-|---|---|---|
-| `AudioEngineGraphTests` | 4 | Full graph tap buffers, system audio graph, CoreAudio rate helpers, model-switch regression |
-| `AudioRecorderUnitTests` | 9 | CoreAudio probe (no mic capture), streaming converter, streamBuffer correctness, align/restore lifecycle, watchdog fires on 0 buffers, watchdog silent on healthy graph |
-
-### When Adding New Audio Tests
+### When Adding New Audio Tests (AudioEngineGraphTests / AudioRecorderUnitTests)
+- **Serialization:** Audio hardware tests MUST run serially (`@Suite(.serialized)`). macOS does not allow multiple `AVAudioEngine` instances to capture the same hardware input simultaneously.
 - **Never** create a persistent `AVAudioEngine` in test setup — use a fresh instance per test.
 - **Always** stop and nil the engine in `tearDown()` to release the microphone.
-- If a test requires `engine.inputNode`, document that it needs built-in mic as default input.
 - For rate-probe tests, use the CoreAudio helper functions — not `AVAudioEngine`.
 
 ## 21. MCP Browser & Web Tokens (Troubleshooting)

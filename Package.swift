@@ -22,7 +22,7 @@ let package = Package(
     targets: [
         .testTarget(
             name: "RecodTests",
-            dependencies: [],
+            dependencies: ["Recod"],
             path: "Tests",
             swiftSettings: [
                 .enableUpcomingFeature("StrictConcurrency")
