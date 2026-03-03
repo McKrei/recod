@@ -5,7 +5,6 @@ extension String {
     /// This represents the minimum number of single-character edits (insertions, deletions, or substitutions)
     /// required to change one word into the other.
     func levenshteinDistance(to other: String) -> Int {
-        let empty = [Int](repeating: 0, count: other.count + 1)
         var last = [Int](0...other.count)
 
         for (i, selfChar) in self.enumerated() {
