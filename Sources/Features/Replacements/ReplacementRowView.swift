@@ -8,7 +8,6 @@ struct ReplacementRowView: View {
     let onDelete: () -> Void
 
     @State private var isHovering = false
-    @State private var isExpanded = false
 
     private var allPatterns: [String] {
         [rule.textToReplace] + rule.additionalIncorrectForms
@@ -28,16 +27,11 @@ struct ReplacementRowView: View {
                 Text(allPatterns.joined(separator: ", "))
                     .font(.body)
                     .foregroundStyle(.secondary)
-                    .lineLimit(isExpanded ? nil : 2)
+                    .lineLimit(2)
                     .multilineTextAlignment(.leading)
                     .contentShape(Rectangle()) // Make entire area tappable
             }
             .frame(width: leftWidth, alignment: .leading)
-            .onTapGesture {
-                withAnimation(.spring(duration: 0.3)) {
-                    isExpanded.toggle()
-                }
-            }
 
             // Replacement (60%)
             HStack(alignment: .center, spacing: 8) {
@@ -81,7 +75,7 @@ struct ReplacementRowView: View {
                     Button(action: onEdit) {
                         Image(systemName: "pencil")
                             .font(.system(size: 14))
-                            .foregroundStyle(isHovering ? .primary : .secondary)
+                            .foregroundStyle(isHovering ? Color.accentColor : .secondary)
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
@@ -93,7 +87,18 @@ struct ReplacementRowView: View {
             }
             .frame(width: rightWidth, alignment: .leading)
         }
+        .contentShape(Rectangle()) // Make the entire row tappable
+        .onTapGesture(perform: onEdit)
         .glassRowStyle(isHovering: isHovering)
         .onHover { isHovering = $0 }
+        .contextMenu {
+            Button(action: onEdit) {
+                Label("Edit Rule", systemImage: "pencil")
+            }
+            
+            Button(role: .destructive, action: onDelete) {
+                Label("Delete Rule", systemImage: "trash")
+            }
+        }
     }
 }
