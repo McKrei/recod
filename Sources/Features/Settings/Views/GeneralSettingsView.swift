@@ -1,10 +1,18 @@
 import SwiftUI
 import CoreGraphics
+import AppKit
 
 struct GeneralSettingsView: View {
+    @Environment(\.modelContext) private var modelContext
     @EnvironmentObject var appState: AppState
     @EnvironmentObject var launchAtLoginService: LaunchAtLoginService
     @State private var showScreenPermissionAlert = false
+    
+    // Backup State
+    @State private var importSummary: ImportSummary?
+    @State private var showImportAlert = false
+    @State private var errorMessage: String?
+    @State private var showErrorAlert = false
 
     var body: some View {
         ScrollView {
@@ -136,6 +144,47 @@ struct GeneralSettingsView: View {
                     .padding(8)
                 }
                 .groupBoxStyle(GlassGroupBoxStyle())
+                GroupBox {
+                    VStack(alignment: .leading, spacing: 16) {
+                        Label("Data Backup", systemImage: "arrow.triangle.2.circlepath")
+                            .font(.headline)
+                            .foregroundStyle(.primary)
+
+                        Divider()
+
+                        HStack {
+                            VStack(alignment: .leading) {
+                                Text("Export Data")
+                                    .font(.body)
+                                Text("Save transcriptions and dictionary to a file")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            Button("Export...") {
+                                exportData()
+                            }
+                        }
+
+                        Divider()
+
+                        HStack {
+                            VStack(alignment: .leading) {
+                                Text("Import Data")
+                                    .font(.body)
+                                Text("Restore transcriptions and dictionary from a file")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            Button("Import...") {
+                                importData()
+                            }
+                        }
+                    }
+                    .padding(8)
+                }
+                .groupBoxStyle(GlassGroupBoxStyle())
             }
             .padding(30)
         }
@@ -150,6 +199,69 @@ struct GeneralSettingsView: View {
             }
         } message: {
             Text("To record system audio, please enable Screen & System Audio Recording for Recod in System Settings → Privacy & Security.\n\nAfter enabling, restart the app.")
+        }
+        .alert("Import Summary", isPresented: $showImportAlert) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            if let summary = importSummary {
+                Text("""
+                Import completed successfully.
+                
+                Transcriptions:
+                - Imported: \(summary.recordingsImported)
+                - Skipped (Duplicates): \(summary.recordingsSkipped)
+                
+                Dictionary Rules:
+                - Imported: \(summary.rulesImported)
+                - Skipped (Duplicates): \(summary.rulesSkipped)
+                """)
+            }
+        }
+        .alert("Error", isPresented: $showErrorAlert) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(errorMessage ?? "An unknown error occurred.")
+        }
+    }
+    
+    // MARK: - Backup Actions
+    
+    private func exportData() {
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.json]
+        panel.nameFieldStringValue = "Recod_Backup_\(Date().formatted(.iso8601.year().month().day())).json"
+        panel.title = "Export Data"
+        panel.prompt = "Export"
+        
+        if panel.runModal() == .OK, let url = panel.url {
+            do {
+                let data = try DataBackupService.shared.exportData(context: modelContext)
+                try data.write(to: url)
+            } catch {
+                errorMessage = error.localizedDescription
+                showErrorAlert = true
+            }
+        }
+    }
+
+    private func importData() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.json]
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        panel.title = "Import Data"
+        panel.prompt = "Import"
+        
+        if panel.runModal() == .OK, let url = panel.url {
+            do {
+                let data = try Data(contentsOf: url)
+                let summary = try DataBackupService.shared.importData(from: data, context: modelContext)
+                importSummary = summary
+                showImportAlert = true
+            } catch {
+                errorMessage = error.localizedDescription
+                showErrorAlert = true
+            }
         }
     }
 }
