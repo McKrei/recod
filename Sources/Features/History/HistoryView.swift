@@ -5,8 +5,7 @@ struct HistoryView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(AudioPlayer.self) private var audioPlayer
 
-    // Show only recordings where file is NOT deleted
-    @Query(filter: #Predicate<Recording> { !$0.isFileDeleted }, sort: \Recording.createdAt, order: .reverse)
+    @Query(sort: \Recording.createdAt, order: .reverse)
     private var recordings: [Recording]
 
     @State private var showDeleteAllAlert = false
@@ -33,9 +32,12 @@ struct HistoryView: View {
                 ScrollView {
                     LazyVStack(spacing: AppTheme.spacing) {
                         ForEach(recordings) { recording in
-                            HistoryRowView(recording: recording, audioPlayer: audioPlayer) {
-                                deleteRecording(recording)
-                            }
+                            HistoryRowView(
+                                recording: recording,
+                                audioPlayer: audioPlayer,
+                                onDelete: { deleteRecording(recording) },
+                                onDeleteAudioOnly: { deleteAudioOnly(recording) }
+                            )
                         }
                     }
                     .padding(AppTheme.pagePadding)
@@ -62,13 +64,31 @@ struct HistoryView: View {
             audioPlayer.stop()
         }
 
-        // Remove file from disk
-        try? FileManager.default.removeItem(at: recording.fileURL)
+        // Remove file from disk if it exists
+        if !recording.isFileDeleted {
+            try? FileManager.default.removeItem(at: recording.fileURL)
+        }
 
-        // Mark as deleted in DB instead of removing the record
-        recording.isFileDeleted = true
-        // Optional: clear file URL path or keep it for reference?
-        // We keep filename so we know what it was.
+        // Completely delete the record from DB
+        modelContext.delete(recording)
+    }
+
+    private func deleteAudioOnly(_ recording: Recording) {
+        if audioPlayer.currentRecordingID == recording.id {
+            audioPlayer.stop()
+        }
+
+        // Remove file from disk if it exists
+        if !recording.isFileDeleted {
+            try? FileManager.default.removeItem(at: recording.fileURL)
+            recording.isFileDeleted = true
+        }
+
+        // If there's no transcription, delete the entire block
+        let text = recording.transcription ?? ""
+        if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            modelContext.delete(recording)
+        }
     }
 
     private func deleteAllFiles() {
@@ -78,11 +98,17 @@ struct HistoryView: View {
         }
 
         withAnimation {
-            for recording in recordings {
+            for recording in recordings where !recording.isFileDeleted {
                 // Delete file
                 try? FileManager.default.removeItem(at: recording.fileURL)
                 // Update model
                 recording.isFileDeleted = true
+                
+                // If there's no transcription, delete the entire block
+                let text = recording.transcription ?? ""
+                if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    modelContext.delete(recording)
+                }
             }
         }
     }

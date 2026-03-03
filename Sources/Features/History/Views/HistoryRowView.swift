@@ -5,6 +5,7 @@ struct HistoryRowView: View {
     let recording: Recording
     let audioPlayer: AudioPlayer
     let onDelete: () -> Void
+    let onDeleteAudioOnly: () -> Void
 
     @State private var isHovering = false
     @State private var isExpanded = false
@@ -17,7 +18,7 @@ struct HistoryRowView: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: AppTheme.spacing) {
-            if recording.transcriptionStatus != .streamingTranscription {
+            if recording.transcriptionStatus != .streamingTranscription && !recording.isFileDeleted {
                 playPauseButton
                     .padding(.top, 2)
             } else {
@@ -199,11 +200,19 @@ struct HistoryRowView: View {
         .onHover { isHovering = $0 }
 
         .contextMenu {
-            if let transcription = recording.transcription {
+            if let transcription = recording.transcription, !transcription.isEmpty {
                 Button {
                     ClipboardService.shared.copyToClipboard(transcription)
                 } label: {
                     Label("Copy Transcription", systemImage: "doc.on.doc")
+                }
+            }
+
+            if !recording.isFileDeleted {
+                Button {
+                    onDeleteAudioOnly()
+                } label: {
+                    Label("Delete Audio Only", systemImage: "waveform.slash")
                 }
             }
 

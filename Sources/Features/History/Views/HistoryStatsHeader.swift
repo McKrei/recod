@@ -8,9 +8,11 @@ struct HistoryStatsHeader: View {
     @State private var totalSize: Int64 = 0
 
     var body: some View {
+        let audioFilesCount = recordings.filter { !$0.isFileDeleted }.count
+
         GroupBox {
             HStack {
-                StatItem(label: "Files", value: "\(recordings.count)")
+                StatItem(label: "Audio Files", value: "\(audioFilesCount)")
 
                 Divider()
                     .frame(height: 20)
@@ -32,7 +34,7 @@ struct HistoryStatsHeader: View {
 
     private func calculateSize() {
         // Access model properties on MainActor
-        let fileURLs = recordings.map { $0.fileURL }
+        let fileURLs = recordings.filter { !$0.isFileDeleted }.map { $0.fileURL }
 
         Task.detached(priority: .background) {
             var size: Int64 = 0
