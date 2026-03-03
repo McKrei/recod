@@ -21,7 +21,7 @@ Sources/
 │   │   ├── AudioLevelMonitor.swift   # Расчет громкости (RMS/vDSP)
 │   │   ├── AudioStreamBuffer.swift   # Буферизация для Whisper (16kHz)
 │   │   └── CoreAudioDeviceManager.swift # Фиксы Bluetooth HFP/Sample Rate
-│   ├── Services/        # Сервисы (Transcription, Clipboard, Formatter)
+│   ├── Services/        # Сервисы (Transcription, Clipboard, Formatter, DataBackup)
 │   ├── Utilities/       # Помощники (WindowAccessor, FileLogger)
 │   └── Models/          # Общие модели (HotKeyShortcut, TranscriptionEngine)
 ├── DesignSystem/        # UI Константы (AppTheme) и Стили
@@ -33,6 +33,7 @@ Sources/
 - **Модели**: `Recording`, `ReplacementRule`.
 - **Контейнер**: Инициализируется в `RecodApp.swift`.
 - **Оркестрация**: `RecordingOrchestrator` внедряет `ModelContext` для сохранения результатов транскрипции.
+- **Резервное копирование**: `DataBackupService` использует DTO (Data Transfer Objects) для экспорта и импорта данных в независимом от SwiftData JSON-формате, автоматически предотвращая дублирование записей.
 - **Реактивность**: Views используют `@Query` для автоматического обновления списков при изменении базы.
 
 ## Аудио Подсистема (Core/Audio)
