@@ -194,7 +194,7 @@ final class ParakeetModelManager: NSObject, @unchecked Sendable {
         }
     }
 
-    func deleteModel(_ model: ParakeetModel) {
+    func deleteModel(_ model: ParakeetModel) async {
         let modelDir = modelsDirectory.appendingPathComponent(model.type.directoryName)
         try? FileManager.default.removeItem(at: modelDir)
 
@@ -204,7 +204,7 @@ final class ParakeetModelManager: NSObject, @unchecked Sendable {
         }
 
         // Clear cached recognizer so it doesn't reference deleted files
-        ParakeetTranscriptionService.shared.clearCache()
+        await ParakeetTranscriptionService.shared.clearCache()
     }
 
     // MARK: - Path Accessors

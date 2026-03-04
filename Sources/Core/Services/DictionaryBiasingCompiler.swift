@@ -1,6 +1,11 @@
 import Foundation
 import WhisperKit
 
+struct ParakeetHotword: Sendable {
+    let text: String
+    let weight: Float
+}
+
 /// A utility to compile user dictionary rules into model-specific structures for inference biasing.
 struct DictionaryBiasingCompiler {
     
@@ -43,8 +48,8 @@ struct DictionaryBiasingCompiler {
     ///
     /// - Parameter rules: The user's replacement rules.
     /// - Returns: A tuple containing the file path of the compiled hotwords and the average calculated score.
-    static func compileParakeetHotwordsFile(from rules: [ReplacementRule]) -> (path: String, avgScore: Float)? {
-        guard !rules.isEmpty else { return nil }
+    static func compileParakeetHotwordsFile(from hotwords: [ParakeetHotword]) -> (path: String, avgScore: Float)? {
+        guard !hotwords.isEmpty else { return nil }
         
         let tempDir = FileManager.default.temporaryDirectory
         let hotwordsURL = tempDir.appendingPathComponent("parakeet_hotwords.txt")
@@ -53,11 +58,11 @@ struct DictionaryBiasingCompiler {
         var totalWeight: Float = 0
         var count: Float = 0
         
-        for rule in rules {
-            let text = rule.textToReplace.trimmingCharacters(in: .whitespacesAndNewlines)
+        for hotword in hotwords {
+            let text = hotword.text.trimmingCharacters(in: .whitespacesAndNewlines)
             if !text.isEmpty {
-                lines.append("\(text) \(rule.weight)")
-                totalWeight += rule.weight
+                lines.append("\(text) \(hotword.weight)")
+                totalWeight += hotword.weight
                 count += 1
             }
         }

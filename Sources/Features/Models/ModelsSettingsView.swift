@@ -111,8 +111,8 @@ struct ModelsSettingsView: View {
                         }
                     },
                     onDelete: {
-                        withAnimation {
-                            modelManager.deleteModel(model)
+                        Task {
+                            await modelManager.deleteModel(model)
                         }
                     }
                 )

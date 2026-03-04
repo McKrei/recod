@@ -178,7 +178,7 @@ final class RecordingOrchestrator: ObservableObject {
             StreamingTranscriptionService.shared.stopStreaming()
             var parakeetStreamingFinal: (String, [TranscriptionSegment])?
             if selectedEngine == .parakeet {
-                parakeetStreamingFinal = ParakeetStreamingService.shared.flushAndCollectRemaining()
+                parakeetStreamingFinal = await ParakeetStreamingService.shared.flushAndCollectRemaining()
             }
             ParakeetStreamingService.shared.stopStreaming()
 
@@ -401,7 +401,10 @@ final class RecordingOrchestrator: ObservableObject {
         }
 
         await FileLogger.shared.log("Streaming Parakeet result empty. Falling back to full-file batch transcription.", level: .warning)
-        let result = try await ParakeetTranscriptionService.shared.transcribe(audioURL: url, modelDir: modelDir, rules: rules)
+        let hotwords = rules.map { rule in
+            ParakeetHotword(text: rule.textToReplace, weight: rule.weight)
+        }
+        let result = try await ParakeetTranscriptionService.shared.transcribe(audioURL: url, modelDir: modelDir, hotwords: hotwords)
         return (result.0, result.1)
     }
 

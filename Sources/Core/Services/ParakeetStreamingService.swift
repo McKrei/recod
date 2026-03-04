@@ -74,7 +74,7 @@ final class ParakeetStreamingService: ObservableObject {
                     let timeOffset = TimeInterval(segmentStartSample) / 16000.0
 
                     // Transcribe this speech segment
-                    let (text, segments) = ParakeetTranscriptionService.shared
+                    let (text, segments) = await ParakeetTranscriptionService.shared
                         .transcribe(audioSamples: speechSamples, timeOffset: timeOffset)
 
                     guard !text.isEmpty else { continue }
@@ -115,7 +115,7 @@ final class ParakeetStreamingService: ObservableObject {
 
     /// Flushes VAD and returns any final segments that were in-flight.
     /// Call this right before stopStreaming to capture trailing speech.
-    func flushAndCollectRemaining() -> (String, [TranscriptionSegment]) {
+    func flushAndCollectRemaining() async -> (String, [TranscriptionSegment]) {
         guard let vad = vad else { return ("", []) }
 
         // Flush forces VAD to emit any partial speech segment
@@ -133,7 +133,7 @@ final class ParakeetStreamingService: ObservableObject {
             guard !speechSamples.isEmpty else { continue }
 
             let timeOffset = TimeInterval(segmentStartSample) / 16000.0
-            let (text, segments) = ParakeetTranscriptionService.shared
+            let (text, segments) = await ParakeetTranscriptionService.shared
                 .transcribe(audioSamples: speechSamples, timeOffset: timeOffset)
 
             guard !text.isEmpty else { continue }

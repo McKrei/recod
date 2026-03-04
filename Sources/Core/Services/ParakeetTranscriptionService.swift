@@ -28,8 +28,7 @@ enum ParakeetTranscriptionError: LocalizedError {
 
 // MARK: - Service
 
-@MainActor
-final class ParakeetTranscriptionService {
+actor ParakeetTranscriptionService {
     static let shared = ParakeetTranscriptionService()
 
     private let longAudioChunkSeconds: Double = 30.0
@@ -44,7 +43,7 @@ final class ParakeetTranscriptionService {
 
     /// Pre-loads the Parakeet model from the given directory.
     /// The directory must contain: encoder.int8.onnx, decoder.int8.onnx, joiner.int8.onnx, tokens.txt
-    func prepareModel(modelDir: URL, rules: [ReplacementRule] = []) async {
+    func prepareModel(modelDir: URL, hotwords: [ParakeetHotword] = []) async {
         if currentModelDir == modelDir && recognizer != nil {
             return
         }
@@ -91,7 +90,7 @@ final class ParakeetTranscriptionService {
         var avgScore: Float = 1.5
         var useHotwords = false
         
-        if let result = DictionaryBiasingCompiler.compileParakeetHotwordsFile(from: rules) {
+        if let result = DictionaryBiasingCompiler.compileParakeetHotwordsFile(from: hotwords) {
             hotwordsPath = result.path
             avgScore = result.avgScore
             useHotwords = true
@@ -177,13 +176,13 @@ final class ParakeetTranscriptionService {
     ///   - audioURL: URL to the local audio file.
     ///   - modelDir: URL to the Parakeet model directory.
     /// - Returns: Tuple of (cleaned text, timestamped segments).
-    func transcribe(audioURL: URL, modelDir: URL, rules: [ReplacementRule] = []) async throws -> (String, [TranscriptionSegment]) {
+    func transcribe(audioURL: URL, modelDir: URL, hotwords: [ParakeetHotword] = []) async throws -> (String, [TranscriptionSegment]) {
         let startTime = Date()
         await FileLogger.shared.log("--- Parakeet Transcription Start ---")
 
         // Ensure model is loaded with hotwords
-        if recognizer == nil || currentModelDir != modelDir || !rules.isEmpty {
-            await prepareModel(modelDir: modelDir, rules: rules)
+        if recognizer == nil || currentModelDir != modelDir || !hotwords.isEmpty {
+            await prepareModel(modelDir: modelDir, hotwords: hotwords)
         }
 
         guard recognizer != nil else {
@@ -216,7 +215,7 @@ final class ParakeetTranscriptionService {
                 String(format: "Using chunked Parakeet inference: %.1fs audio, chunk=%.0fs", audioSeconds, longAudioChunkSeconds),
                 level: .info
             )
-            (text, segments) = await transcribeLongAudioInChunks(samples: samples, chunkSeconds: longAudioChunkSeconds)
+            (text, segments) = transcribeLongAudioInChunks(samples: samples, chunkSeconds: longAudioChunkSeconds)
         } else {
             (text, segments) = transcribe(audioSamples: samples)
         }
@@ -234,7 +233,7 @@ final class ParakeetTranscriptionService {
 
     // MARK: - Long Audio Transcription
 
-    private func transcribeLongAudioInChunks(samples: [Float], chunkSeconds: Double) async -> (String, [TranscriptionSegment]) {
+    private func transcribeLongAudioInChunks(samples: [Float], chunkSeconds: Double) -> (String, [TranscriptionSegment]) {
         guard !samples.isEmpty else { return ("", []) }
 
         let chunkSize = max(Int(chunkSeconds * 16000.0), 16000)
@@ -259,11 +258,6 @@ final class ParakeetTranscriptionService {
             }
 
             index = end
-
-            // Give MainActor a chance to process UI events between heavy chunks.
-            if index < samples.count {
-                await Task.yield()
-            }
         }
 
         return (allTextParts.joined(separator: " "), allSegments)
