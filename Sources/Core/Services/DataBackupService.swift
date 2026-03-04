@@ -8,6 +8,8 @@ struct BackupPayload: Codable {
     let exportDate: Date
     let recordings: [RecordingDTO]
     let rules: [ReplacementRuleDTO]
+    let postProcessingActions: [PostProcessingActionDTO]?
+    let customProviders: [LLMProvider]?
 }
 
 struct RecordingDTO: Codable {
@@ -16,6 +18,7 @@ struct RecordingDTO: Codable {
     let duration: TimeInterval
     let transcription: String?
     let segments: [TranscriptionSegment]?
+    let postProcessedResults: [PostProcessedResult]?
 }
 
 struct ReplacementRuleDTO: Codable {
@@ -28,11 +31,26 @@ struct ReplacementRuleDTO: Codable {
     let useFuzzyMatching: Bool
 }
 
+struct PostProcessingActionDTO: Codable {
+    let id: UUID
+    let name: String
+    let prompt: String
+    let providerID: String
+    let modelID: String
+    let isAutoEnabled: Bool
+    let hotkey: HotKeyShortcut?
+    let sortOrder: Int
+    let createdAt: Date
+}
+
 struct ImportSummary: Equatable {
     var recordingsImported: Int = 0
     var recordingsSkipped: Int = 0
     var rulesImported: Int = 0
     var rulesSkipped: Int = 0
+    var actionsImported: Int = 0
+    var actionsSkipped: Int = 0
+    var customProvidersImported: Int = 0
 }
 
 // MARK: - Backup Service
@@ -45,47 +63,24 @@ final class DataBackupService {
     
     /// Exports all valid recordings and replacement rules to a JSON payload
     func exportData(context: ModelContext) throws -> Data {
-        let recordingDescriptor = FetchDescriptor<Recording>()
-        let allRecordings = try context.fetch(recordingDescriptor)
-        
-        // Only export recordings that have an actual transcription
-        let validRecordings = allRecordings.filter { recording in
-            if let text = recording.transcription, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                return true
-            }
-            return false
-        }
-        
-        let recordingDTOs = validRecordings.map { r in
-            RecordingDTO(
-                id: r.id,
-                createdAt: r.createdAt,
-                duration: r.duration,
-                transcription: r.transcription,
-                segments: r.segments
-            )
-        }
-        
-        let rulesDescriptor = FetchDescriptor<ReplacementRule>()
-        let allRules = try context.fetch(rulesDescriptor)
-        
-        let ruleDTOs = allRules.map { r in
-            ReplacementRuleDTO(
-                id: r.id,
-                textToReplace: r.textToReplace,
-                additionalIncorrectForms: r.additionalIncorrectForms,
-                replacementText: r.replacementText,
-                createdAt: r.createdAt,
-                weight: r.weight,
-                useFuzzyMatching: r.useFuzzyMatching
-            )
-        }
+        let allRecordings = try context.fetch(FetchDescriptor<Recording>())
+        let allRules = try context.fetch(FetchDescriptor<ReplacementRule>())
+        let allActions = try context.fetch(FetchDescriptor<PostProcessingAction>())
+
+        let recordingDTOs = allRecordings
+            .filter(isValidRecordingForExport)
+            .map(recordingToDTO)
+
+        let ruleDTOs = allRules.map(ruleToDTO)
+        let actionDTOs = allActions.map(actionToDTO)
         
         let payload = BackupPayload(
-            version: 1,
+            version: 2,
             exportDate: Date(),
             recordings: recordingDTOs,
-            rules: ruleDTOs
+            rules: ruleDTOs,
+            postProcessingActions: actionDTOs,
+            customProviders: LLMProviderStore.loadCustomProviders()
         )
         
         let encoder = JSONEncoder()
@@ -105,64 +100,177 @@ final class DataBackupService {
         
         let existingRecordings = try context.fetch(FetchDescriptor<Recording>())
         let existingRules = try context.fetch(FetchDescriptor<ReplacementRule>())
+        let existingActions = try context.fetch(FetchDescriptor<PostProcessingAction>())
         
         for dto in payload.recordings {
-            guard let text = dto.transcription, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            guard isValidRecordingDTOForImport(dto) else {
                 summary.recordingsSkipped += 1
                 continue
             }
-            
-            // Duplicate logic: same UUID or (same creation time within 1 second AND same text)
-            let isDuplicate = existingRecordings.contains { ext in
-                if ext.id == dto.id { return true }
-                let timeDiff = abs(ext.createdAt.timeIntervalSince1970 - dto.createdAt.timeIntervalSince1970)
-                return timeDiff < 1.0 && ext.transcription == text
-            }
-            
-            if isDuplicate {
+
+            if hasRecordingDuplicate(dto: dto, existing: existingRecordings) {
                 summary.recordingsSkipped += 1
             } else {
-                let newRec = Recording(
-                    id: dto.id,
-                    createdAt: dto.createdAt, // Maintain chronological order
-                    duration: dto.duration,
-                    transcription: text,
-                    liveTranscription: nil,
-                    transcriptionStatus: .completed,
-                    filename: "imported_\(dto.id.uuidString).m4a", // Dummy filename since audio isn't exported
-                    isFileDeleted: true, // Audio file is inherently absent
-                    transcriptionEngine: "Imported",
-                    segments: dto.segments
-                )
+                let newRec = makeImportedRecording(from: dto)
                 context.insert(newRec)
                 summary.recordingsImported += 1
             }
         }
         
         for dto in payload.rules {
-            // Duplicate logic: same UUID or case-insensitive match on target & replacement
-            let isDuplicate = existingRules.contains { ext in
-                ext.id == dto.id || (ext.textToReplace.lowercased() == dto.textToReplace.lowercased() && ext.replacementText.lowercased() == dto.replacementText.lowercased())
-            }
-            
-            if isDuplicate {
+            if hasRuleDuplicate(dto: dto, existing: existingRules) {
                 summary.rulesSkipped += 1
             } else {
-                let newRule = ReplacementRule(
-                    id: dto.id,
-                    textToReplace: dto.textToReplace,
-                    additionalIncorrectForms: dto.additionalIncorrectForms,
-                    replacementText: dto.replacementText,
-                    createdAt: dto.createdAt,
-                    weight: dto.weight,
-                    useFuzzyMatching: dto.useFuzzyMatching
-                )
+                let newRule = makeImportedRule(from: dto)
                 context.insert(newRule)
                 summary.rulesImported += 1
             }
         }
-        
+
+        if let importedProviders = payload.customProviders, !importedProviders.isEmpty {
+            summary.customProvidersImported = LLMProviderStore.mergeImportedCustomProviders(importedProviders)
+        }
+
+        if let actionDTOs = payload.postProcessingActions {
+            var hasEnabledAction = existingActions.contains(where: { $0.isAutoEnabled })
+
+            for dto in actionDTOs {
+                if hasActionDuplicate(dto: dto, existing: existingActions) {
+                    summary.actionsSkipped += 1
+                    continue
+                }
+
+                let canEnableAuto = dto.isAutoEnabled && !hasEnabledAction
+                let newAction = makeImportedAction(from: dto, isAutoEnabled: canEnableAuto)
+                context.insert(newAction)
+                summary.actionsImported += 1
+
+                if canEnableAuto {
+                    hasEnabledAction = true
+                }
+            }
+        }
+
         try context.save()
         return summary
+    }
+
+    // MARK: - Export Helpers
+
+    private func isValidRecordingForExport(_ recording: Recording) -> Bool {
+        guard let text = recording.transcription else { return false }
+        return !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private func recordingToDTO(_ recording: Recording) -> RecordingDTO {
+        RecordingDTO(
+            id: recording.id,
+            createdAt: recording.createdAt,
+            duration: recording.duration,
+            transcription: recording.transcription,
+            segments: recording.segments,
+            postProcessedResults: recording.postProcessedResults
+        )
+    }
+
+    private func ruleToDTO(_ rule: ReplacementRule) -> ReplacementRuleDTO {
+        ReplacementRuleDTO(
+            id: rule.id,
+            textToReplace: rule.textToReplace,
+            additionalIncorrectForms: rule.additionalIncorrectForms,
+            replacementText: rule.replacementText,
+            createdAt: rule.createdAt,
+            weight: rule.weight,
+            useFuzzyMatching: rule.useFuzzyMatching
+        )
+    }
+
+    private func actionToDTO(_ action: PostProcessingAction) -> PostProcessingActionDTO {
+        PostProcessingActionDTO(
+            id: action.id,
+            name: action.name,
+            prompt: action.prompt,
+            providerID: action.providerID,
+            modelID: action.modelID,
+            isAutoEnabled: action.isAutoEnabled,
+            hotkey: action.hotkey,
+            sortOrder: action.sortOrder,
+            createdAt: action.createdAt
+        )
+    }
+
+    // MARK: - Import Helpers
+
+    private func isValidRecordingDTOForImport(_ dto: RecordingDTO) -> Bool {
+        guard let text = dto.transcription else { return false }
+        return !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private func hasRecordingDuplicate(dto: RecordingDTO, existing: [Recording]) -> Bool {
+        let text = dto.transcription ?? ""
+        return existing.contains { ext in
+            if ext.id == dto.id { return true }
+            let timeDiff = abs(ext.createdAt.timeIntervalSince1970 - dto.createdAt.timeIntervalSince1970)
+            return timeDiff < 1.0 && ext.transcription == text
+        }
+    }
+
+    private func hasRuleDuplicate(dto: ReplacementRuleDTO, existing: [ReplacementRule]) -> Bool {
+        existing.contains { ext in
+            ext.id == dto.id
+                || (ext.textToReplace.lowercased() == dto.textToReplace.lowercased()
+                    && ext.replacementText.lowercased() == dto.replacementText.lowercased())
+        }
+    }
+
+    private func hasActionDuplicate(dto: PostProcessingActionDTO, existing: [PostProcessingAction]) -> Bool {
+        existing.contains { ext in
+            ext.id == dto.id
+                || (ext.name.lowercased() == dto.name.lowercased()
+                    && ext.providerID == dto.providerID
+                    && ext.modelID == dto.modelID)
+        }
+    }
+
+    private func makeImportedRecording(from dto: RecordingDTO) -> Recording {
+        Recording(
+            id: dto.id,
+            createdAt: dto.createdAt,
+            duration: dto.duration,
+            transcription: dto.transcription,
+            liveTranscription: nil,
+            transcriptionStatus: .completed,
+            filename: "imported_\(dto.id.uuidString).m4a",
+            isFileDeleted: true,
+            transcriptionEngine: "Imported",
+            segments: dto.segments,
+            postProcessedResults: dto.postProcessedResults
+        )
+    }
+
+    private func makeImportedRule(from dto: ReplacementRuleDTO) -> ReplacementRule {
+        ReplacementRule(
+            id: dto.id,
+            textToReplace: dto.textToReplace,
+            additionalIncorrectForms: dto.additionalIncorrectForms,
+            replacementText: dto.replacementText,
+            createdAt: dto.createdAt,
+            weight: dto.weight,
+            useFuzzyMatching: dto.useFuzzyMatching
+        )
+    }
+
+    private func makeImportedAction(from dto: PostProcessingActionDTO, isAutoEnabled: Bool) -> PostProcessingAction {
+        PostProcessingAction(
+            id: dto.id,
+            name: dto.name,
+            prompt: dto.prompt,
+            providerID: dto.providerID,
+            modelID: dto.modelID,
+            isAutoEnabled: isAutoEnabled,
+            hotkey: dto.hotkey,
+            sortOrder: dto.sortOrder,
+            createdAt: dto.createdAt
+        )
     }
 }

@@ -261,6 +261,35 @@ final class RecordingOrchestrator: ObservableObject {
             }
 
             recording.transcription = finalText
+            await FileLogger.shared.log("Transcription text ready, checking post-processing actions...", level: .debug)
+
+            let actions: [PostProcessingAction]
+            do {
+                actions = try context.fetch(FetchDescriptor<PostProcessingAction>())
+                await FileLogger.shared.log("Post-processing actions fetched: \(actions.count)", level: .debug)
+            } catch {
+                await FileLogger.shared.log("Failed to fetch post-processing actions: \(error)", level: .error)
+                actions = []
+            }
+
+            let enabledCount = actions.filter { $0.isAutoEnabled }.count
+            var textForClipboard = finalText
+            if enabledCount > 0 {
+                OverlayState.shared.status = .postProcessing
+                recording.transcriptionStatus = .postProcessing
+                try? context.save()
+                await FileLogger.shared.log("Starting post-processing: \(enabledCount) auto-enabled action(s)", level: .info)
+                let postProcessedText = await PostProcessingService.shared.runAllAutoEnabled(on: recording, context: context, actions: actions)
+                if let postProcessedText {
+                    textForClipboard = postProcessedText
+                    await FileLogger.shared.log("Using post-processed text for clipboard insertion", level: .info)
+                } else {
+                    await FileLogger.shared.log("Post-processing produced no output. Falling back to original transcription", level: .warning)
+                }
+            } else {
+                await FileLogger.shared.log("Post-processing skipped: no auto-enabled actions", level: .debug)
+            }
+
             recording.transcriptionStatus = .completed
             try context.save()
 
@@ -269,7 +298,7 @@ final class RecordingOrchestrator: ObservableObject {
             // Вставляем текст сразу же, чтобы юзер не ждал конца анимации. 
             // Это запустится параллельно с отображением галочки.
             Task {
-                await ClipboardService.shared.insertText(finalText, preserveClipboard: !saveToClipboard)
+                await ClipboardService.shared.insertText(textForClipboard, preserveClipboard: !saveToClipboard)
             }
 
             await OverlayState.shared.showSuccess()

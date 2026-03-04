@@ -50,6 +50,13 @@ struct GeneralSettingsView: View {
                 Dictionary Rules:
                 - Imported: \(summary.rulesImported)
                 - Skipped (Duplicates): \(summary.rulesSkipped)
+
+                Post-Processing Actions:
+                - Imported: \(summary.actionsImported)
+                - Skipped (Duplicates): \(summary.actionsSkipped)
+
+                Custom Providers (without API keys):
+                - Imported: \(summary.customProvidersImported)
                 """)
             }
         }
@@ -207,7 +214,7 @@ struct GeneralSettingsView: View {
                     VStack(alignment: .leading) {
                         Text("Export Data")
                             .font(.body)
-                        Text("Save transcriptions and dictionary to a file")
+                        Text("Save transcriptions, post-processing results, dictionary, and actions (without API keys)")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
@@ -223,7 +230,7 @@ struct GeneralSettingsView: View {
                     VStack(alignment: .leading) {
                         Text("Import Data")
                             .font(.body)
-                        Text("Restore transcriptions and dictionary from a file")
+                        Text("Restore transcriptions, post-processing results, dictionary, and actions (without API keys)")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }

@@ -4,6 +4,7 @@ import SwiftUI
 public enum OverlayStatus: Sendable {
     case recording
     case transcribing
+    case postProcessing
     case success
     case error
 }

@@ -13,6 +13,7 @@ import SwiftData
 enum SettingsSelection: Hashable, Identifiable, CaseIterable {
     case general
     case models
+    case postProcessing
     case replacements
     case history
 
@@ -22,6 +23,7 @@ enum SettingsSelection: Hashable, Identifiable, CaseIterable {
         switch self {
         case .general: return "General"
         case .models: return "Models"
+        case .postProcessing: return "Post-Processing"
         case .replacements: return "Replacements"
         case .history: return "History"
         }
@@ -31,6 +33,7 @@ enum SettingsSelection: Hashable, Identifiable, CaseIterable {
         switch self {
         case .general: return "gear"
         case .models: return "cpu"
+        case .postProcessing: return "wand.and.stars"
         case .replacements: return "text.badge.checkmark"
         case .history: return "clock"
         }
@@ -63,6 +66,8 @@ struct SettingsView: View {
                         GeneralSettingsView()
                     case .models:
                         ModelsSettingsView()
+                    case .postProcessing:
+                        PostProcessingSettingsView()
                     case .replacements:
                         ReplacementsSettingsView()
                     case .history:
@@ -101,8 +106,11 @@ struct SettingsView: View {
 }
 
 #Preview {
+    let config = ModelConfiguration(isStoredInMemoryOnly: true)
+    let container = try! ModelContainer(for: Recording.self, PostProcessingAction.self, configurations: config)
+
     SettingsView()
         .environmentObject(AppState())
         .environment(AudioPlayer())
-        .modelContainer(for: Recording.self, inMemory: true)
+        .modelContainer(container)
 }

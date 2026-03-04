@@ -29,6 +29,7 @@ These tests require no mocking, run instantly, and cover the core data transform
 | `TextReplacementServiceTests` | `TextReplacementService.swift` | Exact and Fuzzy matching rules. Validates ASR split/merge scenarios (sliding windows `pw-1`, `pw`, `pw+1`), punctuation preservation, distance threshold boundaries depending on word length, and rules priority. Uses in-memory SwiftData `ModelContainer`. |
 | `TranscriptionEngineTests` | `TranscriptionEngine.swift` | Enum states, raw values, and computed properties. |
 | `TranscriptionSegmentTests` | `Recording.swift` | `TranscriptionSegment` initialization, `Codable`, `Hashable` behavior (identical properties but different UUIDs), and `TranscriptionStatus` transitions. |
+| `DataBackupServiceTests` | `DataBackupService.swift` | Export/import payload integrity, duplicate skipping, import of post-processing results, import of actions/providers, and single auto-enabled action invariant during import. |
 
 ### Tier 2: Audio Engine & Hardware (13 tests)
 These tests interact with macOS CoreAudio and `AVAudioEngine`. They are marked as `@Suite(.serialized)` because macOS prevents concurrent capture of the same hardware input.
@@ -51,6 +52,9 @@ These tests interact with macOS CoreAudio and `AVAudioEngine`. They are marked a
    - Pasting operations (`CGEvent` simulations) require the test runner to have Accessibility permissions (`AXIsProcessTrusted`). macOS security blocks this by default in test runners.
 5. **`HotKeyManager`**
    - Registers actual global hotkeys with Carbon. Testing this causes side-effects on the developer's system during test execution. We test the model (`HotKeyShortcut`) instead.
+6. **Live LLM provider integrations (`LLMService`)**
+   - End-to-end network tests are intentionally not part of regular test suite due to provider availability, auth, and response drift.
+   - We test deterministic persistence/invariants around post-processing via `DataBackupServiceTests` and runtime logs.
 
 ## Adding New Tests (Guidelines)
 

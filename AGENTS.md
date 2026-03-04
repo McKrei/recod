@@ -216,6 +216,7 @@ When adding a new Settings Page or Feature View:
 - **Use:** `StatusToggle(isOn: $binding)`
 - **Do NOT Use:** `Toggle("Label", isOn: $binding)`
 - **Why:** `StatusToggle` has a specific scale (0.85) and an indicator dot (green/red) that matches the app's visual language. Standard toggles look too large and out of place.
+- **Exception:** In compact action rows where the status dot causes overlap (e.g., Post-Processing ActionRow), use a plain `.toggleStyle(.switch)` without label.
 
 ### Grouping
 - **Use:** `GroupBox { ... } .groupBoxStyle(GlassGroupBoxStyle())`
@@ -251,9 +252,29 @@ When adding a new Settings Page or Feature View:
   - Ripple logic must be event-driven (burst on speech intensity rise), not continuous fast pulse loops.
   - Loud speech may add secondary delayed burst; silence should not spam waves.
 - **Transcribing state (`.transcribing`):** use red orbital loader (center dot + rotating dots), no glass background.
+- **Post-processing state (`.postProcessing`):** use blue orbital loader with 5 orbit dots and smooth transition from transcribing state.
 - **Success/Error states:** keep icon-only style (no background circle) with concise transition.
 - **Stop UX requirement:** on stop, UI must switch to transcribing immediately (no visual pause with recording mic still visible).
 - **No magic numbers in OverlayView:** thresholds/speeds/sizes/curve powers must be stored in `AppTheme`.
+
+## 14.2 Post-Processing (LLM) Standards
+- **Reference:** `docs/POST_PROCESSING.md`
+- **Flow invariant:** transcription -> replacement rules -> post-processing -> clipboard insert.
+- **Single auto-action invariant:** only one `PostProcessingAction.isAutoEnabled` may be true at a time.
+- **Clipboard rule:** if post-processing produced output, insert transformed text; otherwise fallback to original transcription.
+- **Prompt contract:** `${output}` placeholder must remain backward-compatible in all UI/services.
+- **Provider storage:** custom providers in `UserDefaults`, API keys only in Keychain (`KeychainService`).
+- **Logging required:** all post-processing runs must log start/success/failure with provider/model and short output diagnostics.
+
+## 14.3 Data Export/Import Standards
+- Export/import must include:
+  - recordings + segments
+  - post-processed results
+  - replacement rules
+  - post-processing actions
+  - custom providers
+- Export/import must never include API keys.
+- On import, duplicates must be skipped and single auto-action invariant must be enforced.
 
 ## 15. WhisperKit Transcription Standards
 - **Special Tokens**: WhisperKit output often contains special tokens like `<|startoftranscript|>`, `<|en|>`, `<|transcribe|>`.

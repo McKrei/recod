@@ -7,6 +7,7 @@ final class Recording {
         case pending
         case streamingTranscription
         case transcribing
+        case postProcessing
         case completed
         case failed
     }
@@ -22,6 +23,7 @@ final class Recording {
     var transcriptionEngine: String?
 
     @Attribute(.externalStorage) var segments: [TranscriptionSegment]?
+    @Attribute(.externalStorage) var postProcessedResults: [PostProcessedResult]?
 
     init(
         id: UUID = UUID(),
@@ -33,7 +35,8 @@ final class Recording {
         filename: String,
         isFileDeleted: Bool = false,
         transcriptionEngine: String? = nil,
-        segments: [TranscriptionSegment]? = nil
+        segments: [TranscriptionSegment]? = nil,
+        postProcessedResults: [PostProcessedResult]? = nil
     ) {
         self.id = id
         self.createdAt = createdAt
@@ -45,6 +48,7 @@ final class Recording {
         self.isFileDeleted = isFileDeleted
         self.transcriptionEngine = transcriptionEngine
         self.segments = segments
+        self.postProcessedResults = postProcessedResults
     }
 
 

@@ -16,6 +16,25 @@ struct HistoryRowView: View {
         audioPlayer.currentRecordingID == recording.id && audioPlayer.isPlaying
     }
 
+    private var latestPostProcessedResult: PostProcessedResult? {
+        recording.postProcessedResults?.max(by: { $0.createdAt < $1.createdAt })
+    }
+
+    private var latestPostProcessedText: String? {
+        guard let text = latestPostProcessedResult?.outputText.trimmingCharacters(in: .whitespacesAndNewlines),
+              !text.isEmpty else {
+            return nil
+        }
+        return text
+    }
+
+    private var textForCopy: String? {
+        if let postProcessed = latestPostProcessedText {
+            return postProcessed
+        }
+        return recording.transcription ?? recording.liveTranscription
+    }
+
     var body: some View {
         HStack(alignment: .top, spacing: AppTheme.spacing) {
             if recording.transcriptionStatus != .streamingTranscription && !recording.isFileDeleted {
@@ -49,6 +68,13 @@ struct HistoryRowView: View {
                             ProgressView()
                                 .controlSize(.small)
                             Text("Transcribing...")
+                                .foregroundStyle(.secondary)
+                        }
+                    case .postProcessing:
+                        HStack(spacing: 8) {
+                            ProgressView()
+                                .controlSize(.small)
+                            Text("Post-processing...")
                                 .foregroundStyle(.secondary)
                         }
                     case .streamingTranscription:
@@ -107,41 +133,105 @@ struct HistoryRowView: View {
                     case .completed:
                         if let transcription = recording.transcription, !transcription.isEmpty {
                             VStack(alignment: .leading, spacing: 6) {
-                                // 1. Main Text (Expandable)
-                                Text(transcription)
-                                    .foregroundStyle(.primary)
-                                    .lineLimit(isExpanded ? nil : 2)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                    .contentShape(Rectangle())
-                                    .onTapGesture {
-                                        withAnimation(.spring(duration: 0.3)) {
-                                            isExpanded.toggle()
-                                            if !isExpanded { isSegmentsExpanded = false }
+                                if let postProcessedText = latestPostProcessedText {
+                                    VStack(alignment: .leading, spacing: 8) {
+                                        HStack(spacing: 6) {
+                                            Image(systemName: "wand.and.stars")
+                                                .foregroundStyle(.secondary)
+                                            Text("After Post-Processing")
+                                                .font(.caption.bold())
+                                                .foregroundStyle(.secondary)
+                                            if let actionName = latestPostProcessedResult?.actionName {
+                                                Text(actionName)
+                                                    .font(.caption)
+                                                    .foregroundStyle(.tertiary)
+                                            }
+                                        }
+
+                                        Text(postProcessedText)
+                                            .foregroundStyle(.primary)
+                                            .lineLimit(isExpanded ? nil : 2)
+                                            .frame(maxWidth: .infinity, alignment: .leading)
+                                            .contentShape(Rectangle())
+                                            .onTapGesture {
+                                                withAnimation(.spring(duration: 0.3)) {
+                                                    isExpanded.toggle()
+                                                    if !isExpanded {
+                                                        isSegmentsExpanded = false
+                                                    }
+                                                }
+                                            }
+
+                                        if isExpanded {
+                                            Divider()
+
+                                            Text("Before Post-Processing")
+                                                .font(.caption.bold())
+                                                .foregroundStyle(.secondary)
+
+                                            Text(transcription)
+                                                .foregroundStyle(.secondary)
+                                                .lineLimit(nil)
+                                                .frame(maxWidth: .infinity, alignment: .leading)
+
+                                            if let segments = recording.segments, !segments.isEmpty {
+                                                Button {
+                                                    withAnimation(.spring(duration: 0.4)) {
+                                                        isSegmentsExpanded.toggle()
+                                                    }
+                                                } label: {
+                                                    HStack(spacing: 4) {
+                                                        Text(isSegmentsExpanded ? "Hide Timeline" : "Show Timeline")
+                                                        Image(systemName: "chevron.down")
+                                                            .rotationEffect(.degrees(isSegmentsExpanded ? 180 : 0))
+                                                    }
+                                                    .font(.caption.bold())
+                                                    .foregroundStyle(Color.accentColor)
+                                                }
+                                                .buttonStyle(.plain)
+                                                .padding(.top, 2)
+
+                                                if isSegmentsExpanded {
+                                                    TranscriptionDetailView(segments: segments)
+                                                        .transition(.move(edge: .top).combined(with: .opacity))
+                                                }
+                                            }
                                         }
                                     }
-
-                                // 2. "Show Transcription" Button (only if segments exist AND expanded)
-                                if isExpanded, let segments = recording.segments, !segments.isEmpty {
-                                    Button {
-                                        withAnimation(.spring(duration: 0.4)) {
-                                            isSegmentsExpanded.toggle()
+                                } else {
+                                    Text(transcription)
+                                        .foregroundStyle(.primary)
+                                        .lineLimit(isExpanded ? nil : 2)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                        .contentShape(Rectangle())
+                                        .onTapGesture {
+                                            withAnimation(.spring(duration: 0.3)) {
+                                                isExpanded.toggle()
+                                                if !isExpanded { isSegmentsExpanded = false }
+                                            }
                                         }
-                                    } label: {
-                                        HStack(spacing: 4) {
-                                            Text(isSegmentsExpanded ? "Hide Transcription" : "Show Transcription")
-                                            Image(systemName: "chevron.down")
-                                                .rotationEffect(.degrees(isSegmentsExpanded ? 180 : 0))
-                                        }
-                                        .font(.caption.bold())
-                                        .foregroundStyle(Color.accentColor)
-                                    }
-                                    .buttonStyle(.plain)
-                                    .padding(.top, 2)
 
-                                    // 3. Detailed Segments List
-                                    if isSegmentsExpanded {
-                                        TranscriptionDetailView(segments: segments)
-                                            .transition(.move(edge: .top).combined(with: .opacity))
+                                    if isExpanded, let segments = recording.segments, !segments.isEmpty {
+                                        Button {
+                                            withAnimation(.spring(duration: 0.4)) {
+                                                isSegmentsExpanded.toggle()
+                                            }
+                                        } label: {
+                                            HStack(spacing: 4) {
+                                                Text(isSegmentsExpanded ? "Hide Transcription" : "Show Transcription")
+                                                Image(systemName: "chevron.down")
+                                                    .rotationEffect(.degrees(isSegmentsExpanded ? 180 : 0))
+                                            }
+                                            .font(.caption.bold())
+                                            .foregroundStyle(Color.accentColor)
+                                        }
+                                        .buttonStyle(.plain)
+                                        .padding(.top, 2)
+
+                                        if isSegmentsExpanded {
+                                            TranscriptionDetailView(segments: segments)
+                                                .transition(.move(edge: .top).combined(with: .opacity))
+                                        }
                                     }
                                 }
                             }
@@ -168,7 +258,7 @@ struct HistoryRowView: View {
 
             // Actions Column
             VStack(spacing: 6) {
-                if (recording.transcriptionStatus == .completed || recording.transcriptionStatus == .streamingTranscription), let text = recording.transcription ?? recording.liveTranscription, !text.isEmpty {
+                if (recording.transcriptionStatus == .completed || recording.transcriptionStatus == .streamingTranscription), let text = textForCopy, !text.isEmpty {
                     Button {
                         ClipboardService.shared.copyToClipboard(text)
                         withAnimation {
@@ -200,11 +290,19 @@ struct HistoryRowView: View {
         .onHover { isHovering = $0 }
 
         .contextMenu {
+            if let postProcessed = latestPostProcessedText {
+                Button {
+                    ClipboardService.shared.copyToClipboard(postProcessed)
+                } label: {
+                    Label("Copy Post-Processed", systemImage: "wand.and.stars")
+                }
+            }
+
             if let transcription = recording.transcription, !transcription.isEmpty {
                 Button {
                     ClipboardService.shared.copyToClipboard(transcription)
                 } label: {
-                    Label("Copy Transcription", systemImage: "doc.on.doc")
+                    Label("Copy Original", systemImage: "doc.on.doc")
                 }
             }
 

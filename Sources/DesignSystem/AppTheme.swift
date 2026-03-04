@@ -60,6 +60,17 @@ enum AppTheme {
     static let overlayTranscribingCenterDotSize: CGFloat = 8
     static let overlayTranscribingOrbitDotSize: CGFloat = 7
     static let overlayTranscribingOrbitRadius: CGFloat = 15
+    static let overlayTranscribingOrbitDots: Int = 3
+    static let overlayPostProcessingOrbitDots: Int = 5
+
+    static let overlayTranscribingTint: Color = .red
+    static let overlayPostProcessingTint: Color = .blue
+    static let overlayLoaderPrimaryOpacity: CGFloat = 0.95
+    static let overlayLoaderSecondaryOpacity: CGFloat = 0.78
+    static let overlayLoaderCenterShadowOpacity: CGFloat = 0.45
+    static let overlayLoaderOrbitShadowOpacity: CGFloat = 0.35
+    static let overlayLoaderCenterShadowRadius: CGFloat = 7
+    static let overlayLoaderOrbitShadowRadius: CGFloat = 6
 
     static let overlayLevelGateThreshold: CGFloat = 0.075
     static let overlayLevelGateRange: CGFloat = 0.925

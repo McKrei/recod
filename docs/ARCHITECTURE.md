@@ -3,6 +3,8 @@
 ## Обзор
 Recod — это нативное приложение для macOS, созданное с использованием **SwiftUI 6** и **SwiftData**. Оно следует модульному паттерну MVVM (Model-View-ViewModel), с четким разделением ответственностей и использованием современной конкурентности (`async/await`).
 
+См. также: `docs/POST_PROCESSING.md` для LLM post-processing подсистемы.
+
 ## Структура Проекта
 
 ```
@@ -31,9 +33,10 @@ Sources/
 ## Хранение Данных (SwiftData)
 Приложение использует SwiftData для сохранения записей и правил замены текста.
 - **Модели**: `Recording`, `ReplacementRule`.
+- **LLM Post-Processing модели**: `PostProcessingAction`, `PostProcessedResult`, `LLMMessage`, `LLMProvider`.
 - **Контейнер**: Инициализируется в `RecodApp.swift`.
 - **Оркестрация**: `RecordingOrchestrator` внедряет `ModelContext` для сохранения результатов транскрипции.
-- **Резервное копирование**: `DataBackupService` использует DTO (Data Transfer Objects) для экспорта и импорта данных в независимом от SwiftData JSON-формате, автоматически предотвращая дублирование записей.
+- **Резервное копирование**: `DataBackupService` использует DTO (Data Transfer Objects) для экспорта/импорта истории, словаря, post-processing результатов, actions и custom providers (без API keys).
 - **Реактивность**: Views используют `@Query` для автоматического обновления списков при изменении базы.
 
 ## Аудио Подсистема (Core/Audio)
@@ -51,6 +54,16 @@ Sources/
 3.  **Стоп**: Останавливает запись -> Сохраняет WAV -> Запускает пакетную транскрипцию (`runBatchTranscription`).
 4.  **Завершение**: Применяет правила замены (`TextReplacementService`) -> Вставляет текст в активное приложение (`ClipboardService`) -> Показывает успех в оверлее.
 
+## LLM Post-Processing
+- **Основные сервисы:**
+  - `LLMService` — OpenAI-compatible HTTP клиент (`/models`, `/chat/completions`).
+  - `PostProcessingService` — запуск авто-action и сохранение результатов в `Recording.postProcessedResults`.
+  - `KeychainService` — безопасное хранение API ключей.
+  - `LLMProviderStore` — хранение custom providers в `UserDefaults`.
+- **Инвариант:** на текущем этапе только один `PostProcessingAction` может быть `isAutoEnabled = true`.
+- **Pipeline:** transcription -> replacements -> post-processing -> clipboard insert.
+- **Clipboard правило:** при успешной post-processing вставляется transformed text, иначе исходный.
+
 ## Транскрипция (Services)
 - **WhisperKit**: CoreML реализация Whisper. Поддерживает Context Biasing (Word Boosting) через инъекцию токенов.
 - **Parakeet**: NVIDIA модель для GPU-транскрипции.
@@ -65,3 +78,4 @@ Sources/
 1.  **Никаких God Objects**: Логика должна быть вынесена в специализированные сервисы. `AppState` только для конфигурации.
 2.  **CoreAudio API для Rate Probe**: Никогда не создавайте `AVAudioEngine` только чтобы узнать Sample Rate — это захватывает микрофон.
 3.  **Вставка Текста Немедленно**: Текст должен вставляться в активное приложение сразу после готовности, не дожидаясь окончания анимации "Успех".
+4.  **Single Auto Action**: Одновременно допускается только один auto-enabled post-processing action.

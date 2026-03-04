@@ -154,7 +154,7 @@ struct RecodApp: App {
         Self.backupDatabase()
 
         do {
-            modelContainer = try ModelContainer(for: Recording.self, ReplacementRule.self)
+            modelContainer = try ModelContainer(for: Recording.self, ReplacementRule.self, PostProcessingAction.self)
         } catch {
             fatalError("Could not initialize ModelContainer: \(error)")
         }

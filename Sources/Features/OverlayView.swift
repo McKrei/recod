@@ -57,7 +57,10 @@ struct OverlayView: View {
             recordingContent
                 .transition(.scale(scale: AppTheme.overlayRecordingTransitionScale).combined(with: .opacity))
         case .transcribing:
-            TranscribingIndicator()
+            TranscribingIndicator(style: .transcribing)
+                .transition(.opacity)
+        case .postProcessing:
+            TranscribingIndicator(style: .postProcessing)
                 .transition(.opacity)
         case .success:
             successIcon
