@@ -81,6 +81,37 @@ final class RecordingOrchestrator: ObservableObject {
         }
     }
 
+    public func cancelCurrentRecording() {
+        guard !isTransitioning && isRecording else {
+            Task { await FileLogger.shared.log("cancelCurrentRecording blocked: transitioning=\(isTransitioning)", level: .warning) }
+            return
+        }
+        isTransitioning = true
+
+        Task {
+            defer { Task { @MainActor in self.isTransitioning = false } }
+
+            OverlayState.shared.audioLevel = 0
+            StreamingTranscriptionService.shared.stopStreaming()
+            ParakeetStreamingService.shared.stopStreaming()
+
+            let draftRecording = self.streamingRecording
+            self.streamingRecording = nil
+
+            if let url = await audioRecorder.stopRecording() {
+                try? FileManager.default.removeItem(at: url)
+            }
+
+            if let context = modelContext, let draftRecording {
+                context.delete(draftRecording)
+                try? context.save()
+            }
+
+            OverlayState.shared.isVisible = false
+            await FileLogger.shared.log("Recording cancelled by user")
+        }
+    }
+
     private func checkEngineReady(engine: TranscriptionEngine) -> Bool {
         switch engine {
         case .whisperKit:

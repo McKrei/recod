@@ -175,6 +175,23 @@ struct GeneralSettingsView: View {
                         set: { appState.saveToClipboard = $0 }
                     ))
                 }
+
+                Divider()
+
+                HStack {
+                    VStack(alignment: .leading) {
+                        Text("Escape Cancels Recording")
+                            .font(.body)
+                        Text("Press Esc to abort recording without saving or transcribing")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    StatusToggle(isOn: Binding(
+                        get: { appState.escapeCancelsRecording },
+                        set: { appState.escapeCancelsRecording = $0 }
+                    ))
+                }
             }
             .padding(8)
         }

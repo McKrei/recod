@@ -27,6 +27,19 @@ class AppState: ObservableObject {
         }
     }
 
+    public var escapeCancelsRecording: Bool {
+        get {
+            if UserDefaults.standard.object(forKey: "escapeCancelsRecording") == nil {
+                UserDefaults.standard.set(true, forKey: "escapeCancelsRecording")
+            }
+            return UserDefaults.standard.bool(forKey: "escapeCancelsRecording")
+        }
+        set {
+            self.objectWillChange.send()
+            UserDefaults.standard.set(newValue, forKey: "escapeCancelsRecording")
+        }
+    }
+
     public var selectedEngine: TranscriptionEngine {
         get {
             TranscriptionEngine(rawValue: UserDefaults.standard.string(forKey: "selectedEngine") ?? "whisperKit") ?? .whisperKit

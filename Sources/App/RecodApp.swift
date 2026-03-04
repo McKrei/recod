@@ -9,15 +9,19 @@ import SwiftUI
 import AppKit
 import Combine
 import SwiftData
+import Carbon
 
 @MainActor
 class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     var overlayWindow: NSWindow?
     private var cancellables = Set<AnyCancellable>()
+    private var localKeyMonitor: Any?
+    private var globalKeyMonitor: Any?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         setupOverlayWindow()
         setupSignalHandlers()
+        setupEscapeCancellationMonitoring()
 
         // Prepare audio engine at launch: request permission, align sample rates, build graph.
         // The engine stays running idle so the first recording starts immediately without a cold-start delay.
@@ -37,6 +41,17 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         }
     }
 
+    func applicationWillTerminate(_ notification: Notification) {
+        if let monitor = localKeyMonitor {
+            NSEvent.removeMonitor(monitor)
+            localKeyMonitor = nil
+        }
+        if let monitor = globalKeyMonitor {
+            NSEvent.removeMonitor(monitor)
+            globalKeyMonitor = nil
+        }
+    }
+
     private func setupSignalHandlers() {
         let sigintSource = DispatchSource.makeSignalSource(signal: SIGINT, queue: .main)
         sigintSource.setEventHandler {
@@ -52,6 +67,29 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
 
         signal(SIGINT, SIG_IGN)
         signal(SIGTERM, SIG_IGN)
+    }
+
+    private func setupEscapeCancellationMonitoring() {
+        localKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            guard event.keyCode == UInt16(kVK_Escape) else { return event }
+            guard !event.isARepeat else { return nil }
+            guard AppState.shared.escapeCancelsRecording else { return event }
+            guard RecordingOrchestrator.shared.isRecording else { return event }
+
+            RecordingOrchestrator.shared.cancelCurrentRecording()
+            return nil
+        }
+
+        globalKeyMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { event in
+            guard event.keyCode == UInt16(kVK_Escape) else { return }
+            guard !event.isARepeat else { return }
+
+            Task { @MainActor in
+                guard AppState.shared.escapeCancelsRecording else { return }
+                guard RecordingOrchestrator.shared.isRecording else { return }
+                RecordingOrchestrator.shared.cancelCurrentRecording()
+            }
+        }
     }
 
     private func setupOverlayWindow() {
@@ -100,15 +138,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
 
 struct MenuBarContent: View {
     @ObservedObject var appState: AppState
-    @ObservedObject var orchestrator: RecordingOrchestrator
     @ObservedObject var updaterManager: UpdaterManager
     @Environment(\.openWindow) var openWindow
 
     var body: some View {
-        Button(orchestrator.isRecording ? "Stop Recording" : "Start Recording") {
-            appState.toggleRecording()
+        Button("Settings...") {
+            openWindow(id: "settings")
+            NSApp.activate(ignoringOtherApps: true)
         }
-        .keyboardShortcut("R")
 
         Divider()
 
@@ -116,7 +153,7 @@ struct MenuBarContent: View {
             get: { appState.saveToClipboard },
             set: { appState.saveToClipboard = $0 }
         ))
-        
+
         Divider()
 
         Button("Check for Updates...") {
@@ -124,18 +161,11 @@ struct MenuBarContent: View {
         }
         .disabled(!updaterManager.canCheckForUpdates)
 
-        Button("Settings...") {
-            openWindow(id: "settings")
-            NSApp.activate(ignoringOtherApps: true)
-        }
-        .keyboardShortcut(",", modifiers: .command)
-
         Divider()
 
         Button("Quit") {
             NSApplication.shared.terminate(nil)
         }
-        .keyboardShortcut("Q")
     }
 }
 
@@ -170,7 +200,7 @@ struct RecodApp: App {
 
     var body: some Scene {
         MenuBarExtra {
-            MenuBarContent(appState: appState, orchestrator: orchestrator, updaterManager: updaterManager)
+            MenuBarContent(appState: appState, updaterManager: updaterManager)
                 .modelContainer(modelContainer)
                 .environment(audioPlayer)
         } label: {
