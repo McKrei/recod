@@ -6,6 +6,7 @@ Post-processing transforms finished transcription text using OpenAI-compatible L
 Current behavior:
 - Only **one auto action** can be active at a time.
 - Post-processing runs **after** batch transcription and dictionary replacements.
+- Manual post-processing can be triggered from **History** for completed recordings.
 - Clipboard insertion uses post-processed text when available (fallback to original transcription on failure).
 
 ## Data Model
@@ -41,6 +42,13 @@ Stored in `Recording.postProcessedResults` as external storage:
 4. Clipboard insertion uses transformed text.
 5. Recording status switches to `.completed`.
 
+### Manual Flow (History)
+1. User opens action menu in `HistoryRowView` and picks an action.
+2. `RecordingOrchestrator.runManualPostProcessing` sets status to `.postProcessing`.
+3. `PostProcessingService.runManual` clears previous `postProcessedResults` and runs selected action.
+4. On success, new single result is saved and status returns to `.completed`.
+5. On failure, status also returns to `.completed` (transcription remains valid); error is logged.
+
 ## UI
 
 ### Settings > Post-Processing
@@ -54,6 +62,9 @@ ${output}
 ```
 
 ### History
+- Completed rows with non-empty transcription and existing actions show inline manual run menu.
+- Menu label shows either first 3 chars of last action name or `wand.and.stars` placeholder.
+- Menu is hidden while row is not in completed state or when there are no actions.
 - If post-processing result exists:
   - top text shows **After Post-Processing**
   - expanded block shows **Before Post-Processing** and optional timeline
@@ -97,4 +108,4 @@ Key points are logged to `~/Library/Application Support/Recod/Logs/app.log`:
 4. Prefer storing new execution metadata in `PostProcessedResult`, not in `Recording` root.
 5. Add tests for DTO/backup compatibility whenever payload schema changes.
 
-For future features (multi-action chains, manual run, prompt templates), extend `PostProcessingService` first, then UI.
+For future features (multi-action chains, prompt templates), extend `PostProcessingService` first, then UI.

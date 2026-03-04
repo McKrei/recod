@@ -94,4 +94,23 @@ final class PostProcessingService {
             .last(where: { $0.actionID == action.id })?
             .outputText
     }
+
+    /// Manually run a specific action on a recording.
+    /// Clears any existing post-processed result before running.
+    func runManual(_ action: PostProcessingAction, on recording: Recording, context: ModelContext) async throws {
+        guard let transcription = recording.transcription,
+              !transcription.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            await FileLogger.shared.log(
+                "Manual post-processing skipped: empty transcription for recording=\(recording.id)",
+                level: .warning
+            )
+            return
+        }
+
+        // Business rule: one post-processed result per recording.
+        recording.postProcessedResults = nil
+        try context.save()
+
+        try await runAction(action, on: recording, context: context)
+    }
 }

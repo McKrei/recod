@@ -7,11 +7,15 @@ struct HistoryRowView: View {
     let onDelete: () -> Void
     let onDeleteAudioOnly: () -> Void
     let onRetranscribe: () -> Void
+    let onRunPostProcessing: (PostProcessingAction) -> Void
 
     @State private var isHovering = false
     @State private var isExpanded = false
     @State private var isSegmentsExpanded = false
     @State private var showCopyFeedback = false
+
+    @Query(sort: \PostProcessingAction.sortOrder)
+    private var postProcessingActions: [PostProcessingAction]
 
     private var isCurrentPlaying: Bool {
         audioPlayer.currentRecordingID == recording.id && audioPlayer.isPlaying
@@ -36,6 +40,29 @@ struct HistoryRowView: View {
         return recording.transcription ?? recording.liveTranscription
     }
 
+    private var transcriptionStatus: Recording.TranscriptionStatus {
+        recording.transcriptionStatus ?? .completed
+    }
+
+    private var canRunPostProcessing: Bool {
+        transcriptionStatus == .completed &&
+        recording.transcription?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false &&
+        !postProcessingActions.isEmpty
+    }
+
+    @ViewBuilder
+    private var postProcessingButtonLabel: some View {
+        if let actionName = latestPostProcessedResult?.actionName {
+            Text(String(actionName.prefix(3)))
+                .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                .foregroundStyle(.secondary)
+        } else {
+            Image(systemName: "wand.and.stars")
+                .font(.system(size: 11))
+                .foregroundStyle(.tertiary)
+        }
+    }
+
     var body: some View {
         HStack(alignment: .top, spacing: AppTheme.spacing) {
             if recording.transcriptionStatus != .streamingTranscription && !recording.isFileDeleted {
@@ -56,6 +83,24 @@ struct HistoryRowView: View {
 
                     Spacer()
 
+                    if canRunPostProcessing {
+                        Menu {
+                            ForEach(postProcessingActions) { action in
+                                Button(action.name) {
+                                    onRunPostProcessing(action)
+                                }
+                            }
+                        } label: {
+                            postProcessingButtonLabel
+                                .frame(width: 28, height: 18)
+                                .background(Color.white.opacity(0.07))
+                                .clipShape(RoundedRectangle(cornerRadius: 4))
+                        }
+                        .menuStyle(.borderlessButton)
+                        .fixedSize()
+                        .help("Run post-processing")
+                    }
+
                     Text(formatDuration(recording.duration))
                         .font(.caption.monospacedDigit())
                         .foregroundStyle(.tertiary)
@@ -63,7 +108,7 @@ struct HistoryRowView: View {
 
                 // Transcription Content
                 VStack(alignment: .leading, spacing: 4) {
-                    switch recording.transcriptionStatus ?? .completed {
+                    switch transcriptionStatus {
                     case .transcribing:
                         VStack(alignment: .leading, spacing: 6) {
                             HStack(spacing: 8) {
@@ -316,7 +361,7 @@ struct HistoryRowView: View {
 
             // Actions Column
             VStack(spacing: 6) {
-                if (recording.transcriptionStatus == .completed || recording.transcriptionStatus == .streamingTranscription), let text = textForCopy, !text.isEmpty {
+                if (transcriptionStatus == .completed || transcriptionStatus == .streamingTranscription), let text = textForCopy, !text.isEmpty {
                     Button {
                         ClipboardService.shared.copyToClipboard(text)
                         withAnimation {

@@ -37,7 +37,10 @@ struct HistoryView: View {
                                 audioPlayer: audioPlayer,
                                 onDelete: { deleteRecording(recording) },
                                 onDeleteAudioOnly: { deleteAudioOnly(recording) },
-                                onRetranscribe: { retranscribeRecording(recording) }
+                                onRetranscribe: { retranscribeRecording(recording) },
+                                onRunPostProcessing: { action in
+                                    runPostProcessing(recording, action: action)
+                                }
                             )
                         }
                     }
@@ -117,11 +120,15 @@ struct HistoryView: View {
     private func retranscribeRecording(_ recording: Recording) {
         RecordingOrchestrator.shared.retranscribe(recording: recording)
     }
+
+    private func runPostProcessing(_ recording: Recording, action: PostProcessingAction) {
+        RecordingOrchestrator.shared.runManualPostProcessing(recording: recording, action: action)
+    }
 }
 
 #Preview {
     let config = ModelConfiguration(isStoredInMemoryOnly: true)
-    let container = try! ModelContainer(for: Recording.self, configurations: config)
+    let container = try! ModelContainer(for: Recording.self, PostProcessingAction.self, configurations: config)
 
     let samples = [
         Recording(createdAt: .now, duration: 125, transcription: "Hello world, this is a test recording.", transcriptionStatus: .completed, filename: "rec1.m4a"),
@@ -131,6 +138,27 @@ struct HistoryView: View {
 
     for sample in samples {
         container.mainContext.insert(sample)
+    }
+
+    let previewActions = [
+        PostProcessingAction(
+            name: "Summarize",
+            prompt: "Summarize transcript:\n${output}",
+            providerID: "preview-provider",
+            modelID: "preview-model",
+            sortOrder: 0
+        ),
+        PostProcessingAction(
+            name: "Cleanup",
+            prompt: "Clean up transcript formatting:\n${output}",
+            providerID: "preview-provider",
+            modelID: "preview-model",
+            sortOrder: 1
+        )
+    ]
+
+    for action in previewActions {
+        container.mainContext.insert(action)
     }
 
     return HistoryView()

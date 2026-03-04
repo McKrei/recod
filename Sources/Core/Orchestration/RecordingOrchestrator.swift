@@ -507,6 +507,48 @@ final class RecordingOrchestrator: ObservableObject {
         }
     }
 
+    /// Manually triggers post-processing for a completed recording.
+    /// Runs asynchronously, allowing multiple recordings to process independently.
+    public func runManualPostProcessing(recording: Recording, action: PostProcessingAction) {
+        guard recording.transcription?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false else {
+            return
+        }
+
+        guard let context = modelContext else {
+            Task { await FileLogger.shared.log("runManualPostProcessing: modelContext not set", level: .error) }
+            return
+        }
+
+        Task { @MainActor in
+            await FileLogger.shared.log(
+                "Manual post-processing requested: recording=\(recording.id), action=\(action.name)",
+                level: .info
+            )
+
+            recording.transcriptionStatus = .postProcessing
+            try? context.save()
+
+            do {
+                try await PostProcessingService.shared.runManual(action, on: recording, context: context)
+                recording.transcriptionStatus = .completed
+                try? context.save()
+
+                await FileLogger.shared.log(
+                    "Manual post-processing completed: recording=\(recording.id), action=\(action.name)",
+                    level: .info
+                )
+            } catch {
+                recording.transcriptionStatus = .completed
+                try? context.save()
+
+                await FileLogger.shared.log(
+                    "Manual post-processing failed: recording=\(recording.id), action=\(action.name), error=\(error.localizedDescription)",
+                    level: .error
+                )
+            }
+        }
+    }
+
     public func cancelRetranscribe(recording: Recording) {
         let recordingID = recording.id
         Task {
