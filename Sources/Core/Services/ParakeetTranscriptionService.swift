@@ -37,7 +37,7 @@ actor ParakeetTranscriptionService {
     private var recognizer: SherpaOnnxOfflineRecognizer?
     private var currentModelDir: URL?
 
-    private init() {}
+    init() {}
 
     // MARK: - Model Loading
 

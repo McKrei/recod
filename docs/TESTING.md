@@ -29,6 +29,7 @@ These tests require no mocking, run instantly, and cover the core data transform
 | `TextReplacementServiceTests` | `TextReplacementService.swift` | Exact and Fuzzy matching rules. Validates ASR split/merge scenarios (sliding windows `pw-1`, `pw`, `pw+1`), punctuation preservation, distance threshold boundaries depending on word length, and rules priority. Uses in-memory SwiftData `ModelContainer`. |
 | `TranscriptionEngineTests` | `TranscriptionEngine.swift` | Enum states, raw values, and computed properties. |
 | `TranscriptionSegmentTests` | `Recording.swift` | `TranscriptionSegment` initialization, `Codable`, `Hashable` behavior (identical properties but different UUIDs), and `TranscriptionStatus` transitions. |
+| `BatchTranscriptionQueueTests` | `BatchTranscriptionQueue.swift` | FIFO processing, pending-job deduplication by `recordingID`, cancel of pending jobs, propagation of inference biasing to Parakeet/Whisper workers, strict waiting for async completion callbacks, and `clearCache()` guarantees (including error path) using fake workers. |
 | `DataBackupServiceTests` | `DataBackupService.swift` | Export/import payload integrity, duplicate skipping, import of post-processing results, import of actions/providers, and single auto-enabled action invariant during import. |
 
 ### Tier 2: Audio Engine & Hardware (13 tests)

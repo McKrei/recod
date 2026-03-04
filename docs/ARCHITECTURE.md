@@ -54,6 +54,35 @@ Sources/
 3.  **Стоп**: Останавливает запись -> Сохраняет WAV -> Финализирует текст из streaming-результата (batch fallback только если streaming пуст).
 4.  **Завершение**: Применяет правила замены (`TextReplacementService`) -> Вставляет текст в активное приложение (`ClipboardService`) -> Показывает успех в оверлее.
 
+## Retranscribe Scheduler (Batch Queue)
+
+Для повторной транскрибации (`History -> Retranscribe`) используется отдельный путь, изолированный от интерактивной записи:
+
+- `RecordingOrchestrator.retranscribe()` больше не запускает `runBatchTranscription()` напрямую.
+- Вместо этого создается `BatchTranscriptionJob` и отправляется в `BatchTranscriptionQueue` (actor, FIFO).
+- Очередь выполняет строго одну задачу за раз и обновляет SwiftData через callbacks в `RecordingOrchestrator`.
+
+### Статусы записи
+
+`Recording.TranscriptionStatus` расширен:
+- `queued` — запись поставлена в очередь ретранскрибации.
+- `cancelled` — pending-задача отменена пользователем.
+
+Типичный цикл статусов для retrancribe:
+`queued -> transcribing -> postProcessing -> completed`
+
+или при ошибках:
+`queued -> transcribing -> failed`
+
+### Изоляция воркеров
+
+- **Interactive flow** (обычная запись) продолжает использовать существующий pipeline оркестратора.
+- **Batch flow** (retranscribe) идет через `BatchTranscriptionQueue`.
+- Для Parakeet и Whisper используются отдельные batch workers внутри очереди.
+- После каждой batch-задачи вызывается `clearCache()` у соответствующего worker, чтобы выгружать модель из RAM.
+- Batch job считается завершенной только после полного pipeline: transcription -> replacements -> post-processing.
+- Inference biasing (user dictionary/word boosting) применяется и в batch path для обоих движков.
+
 ## LLM Post-Processing
 - **Основные сервисы:**
   - `LLMService` — OpenAI-compatible HTTP клиент (`/models`, `/chat/completions`).

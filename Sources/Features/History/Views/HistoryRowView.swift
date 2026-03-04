@@ -163,6 +163,24 @@ struct HistoryRowView: View {
                                     .foregroundStyle(.secondary)
                             }
                         }
+                    case .queued:
+                        HStack(spacing: 8) {
+                            Image(systemName: "clock.arrow.2.circlepath")
+                                .foregroundStyle(.secondary)
+                            Text("Queued for retranscription")
+                                .foregroundStyle(.secondary)
+
+                            Spacer()
+
+                            Button {
+                                RecordingOrchestrator.shared.cancelRetranscribe(recording: recording)
+                            } label: {
+                                Image(systemName: "xmark.circle.fill")
+                                    .foregroundStyle(.secondary)
+                            }
+                            .buttonStyle(.plain)
+                            .help("Cancel")
+                        }
                     case .completed:
                         if let transcription = recording.transcription, !transcription.isEmpty {
                             VStack(alignment: .leading, spacing: 6) {
@@ -280,6 +298,13 @@ struct HistoryRowView: View {
                             Text("Transcription failed")
                                 .foregroundStyle(.secondary)
                         }
+                    case .cancelled:
+                        HStack(spacing: 4) {
+                            Image(systemName: "slash.circle")
+                                .foregroundStyle(.secondary)
+                            Text("Retranscription cancelled")
+                                .foregroundStyle(.secondary)
+                        }
                     case .pending:
                         Text("Pending...")
                                 .italic()
@@ -350,6 +375,14 @@ struct HistoryRowView: View {
                     onRetranscribe()
                 } label: {
                     Label("Retranscribe", systemImage: "arrow.trianglehead.2.clockwise.rotate.90.circle")
+                }
+
+                if recording.transcriptionStatus == .queued {
+                    Button(role: .destructive) {
+                        RecordingOrchestrator.shared.cancelRetranscribe(recording: recording)
+                    } label: {
+                        Label("Cancel Retranscription", systemImage: "xmark.circle")
+                    }
                 }
             }
 

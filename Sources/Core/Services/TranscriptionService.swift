@@ -10,7 +10,7 @@ final class TranscriptionService {
     public var activeWhisperKit: WhisperKit? { return whisperKit }
     private var currentModelURL: URL?
 
-    private init() {}
+    init() {}
 
     func prepareModel(modelURL: URL) async {
         if currentModelURL == modelURL && whisperKit != nil {
@@ -39,6 +39,13 @@ final class TranscriptionService {
     ///   - modelURL: URL to the folder containing the WhisperKit CoreML model.
     /// - Returns: A tuple containing the joined cleaned transcription text and an array of timestamped segments.
     func transcribe(audioURL: URL, modelURL: URL, rules: [ReplacementRule] = []) async throws -> (String, [TranscriptionSegment]) {
+        let biasingEntries = rules.map {
+            InferenceBiasingEntry(text: $0.textToReplace, weight: $0.weight)
+        }
+        return try await transcribe(audioURL: audioURL, modelURL: modelURL, biasingEntries: biasingEntries)
+    }
+
+    func transcribe(audioURL: URL, modelURL: URL, biasingEntries: [InferenceBiasingEntry]) async throws -> (String, [TranscriptionSegment]) {
         let startTime = Date()
         await FileLogger.shared.log("--- WhisperKit Transcription Start ---")
 
@@ -70,8 +77,8 @@ final class TranscriptionService {
         options.temperature = 0.0
 
         // Context Biasing (Word Boosting) for WhisperKit
-        if !rules.isEmpty {
-            let promptTokens = DictionaryBiasingCompiler.compileWhisperPromptTokens(from: rules, tokenizer: kit.tokenizer)
+        if !biasingEntries.isEmpty {
+            let promptTokens = DictionaryBiasingCompiler.compileWhisperPromptTokens(from: biasingEntries, tokenizer: kit.tokenizer)
             if !promptTokens.isEmpty {
                 options.promptTokens = promptTokens
                 await FileLogger.shared.log("WhisperKit Context Biasing: Injected \(promptTokens.count) tokens from user dictionary.")

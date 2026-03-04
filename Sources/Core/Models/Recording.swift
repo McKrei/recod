@@ -6,10 +6,12 @@ final class Recording {
     enum TranscriptionStatus: String, Codable {
         case pending
         case streamingTranscription
+        case queued
         case transcribing
         case postProcessing
         case completed
         case failed
+        case cancelled
     }
 
     @Attribute(.unique) var id: UUID
@@ -60,7 +62,7 @@ final class Recording {
     }
 }
 
-struct TranscriptionSegment: Codable, Identifiable, Hashable {
+struct TranscriptionSegment: Codable, Identifiable, Hashable, Sendable {
     var id: UUID = UUID()
     var start: TimeInterval
     var end: TimeInterval

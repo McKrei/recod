@@ -47,7 +47,7 @@ public struct RecordingSyncService {
             guard let status = recording.transcriptionStatus else { continue }
 
             switch status {
-            case .streamingTranscription, .transcribing, .postProcessing:
+            case .streamingTranscription, .queued, .transcribing, .postProcessing:
                 let trimmedTranscription = recording.transcription?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
                 let trimmedLive = recording.liveTranscription?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
 
@@ -59,7 +59,7 @@ public struct RecordingSyncService {
                 } else {
                     recording.transcriptionStatus = .failed
                 }
-            case .pending, .completed, .failed:
+            case .pending, .completed, .failed, .cancelled:
                 continue
             }
         }

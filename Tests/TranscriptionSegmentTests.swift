@@ -57,9 +57,11 @@ struct TranscriptionSegmentTests {
     func statusRawValues() {
         #expect(Recording.TranscriptionStatus.pending.rawValue == "pending")
         #expect(Recording.TranscriptionStatus.streamingTranscription.rawValue == "streamingTranscription")
+        #expect(Recording.TranscriptionStatus.queued.rawValue == "queued")
         #expect(Recording.TranscriptionStatus.transcribing.rawValue == "transcribing")
         #expect(Recording.TranscriptionStatus.completed.rawValue == "completed")
         #expect(Recording.TranscriptionStatus.failed.rawValue == "failed")
+        #expect(Recording.TranscriptionStatus.cancelled.rawValue == "cancelled")
     }
     
     @Test("TranscriptionStatus Codable round-trip")

@@ -46,6 +46,23 @@ final class RecordingOrchestrator: ObservableObject {
                 OverlayState.shared.audioLevel = level
             }
             .store(in: &cancellables)
+
+        Task {
+            await BatchTranscriptionQueue.shared.setCallbacks(
+                onJobStarted: { [weak self] recordingID in
+                    self?.handleBatchJobStarted(recordingID: recordingID)
+                },
+                onJobCompleted: { [weak self] recordingID, text, segments in
+                    await self?.handleBatchJobCompleted(recordingID: recordingID, text: text, segments: segments)
+                },
+                onJobFailed: { [weak self] recordingID, error in
+                    self?.handleBatchJobFailed(recordingID: recordingID, error: error)
+                },
+                onJobCancelled: { [weak self] recordingID in
+                    self?.handleBatchJobCancelled(recordingID: recordingID)
+                }
+            )
+        }
     }
 
     public func prepareAudio() {
@@ -428,43 +445,155 @@ final class RecordingOrchestrator: ObservableObject {
         }
 
         let engine = AppState.shared.selectedEngine
+        let rules = (try? ctx.fetch(FetchDescriptor<ReplacementRule>())) ?? []
+        let biasingEntries = rules.map {
+            InferenceBiasingEntry(text: $0.textToReplace, weight: $0.weight)
+        }
 
-        guard checkEngineReady(engine: engine) else {
+        let whisperModelURL: URL?
+        let parakeetModelDir: URL?
+
+        switch engine {
+        case .whisperKit:
+            whisperModelURL = whisperModelManager.flatMap {
+                guard let id = $0.selectedModelId else { return nil }
+                return $0.getModelURL(for: id)
+            }
+            parakeetModelDir = nil
+        case .parakeet:
+            whisperModelURL = nil
+            parakeetModelDir = parakeetModelManager.flatMap {
+                guard let id = $0.selectedModelId else { return nil }
+                return $0.getModelDirectory(for: id)
+            }
+        }
+
+        let modelAvailable: Bool
+        switch engine {
+        case .whisperKit:
+            modelAvailable = whisperModelURL != nil
+        case .parakeet:
+            modelAvailable = parakeetModelDir != nil
+        }
+
+        guard modelAvailable else {
             Task { await FileLogger.shared.log("retranscribe: engine \(engine.displayName) not ready", level: .error) }
-            recording.transcription = nil
-            recording.liveTranscription = nil
-            recording.segments = nil
-            recording.postProcessedResults = nil
             recording.transcriptionStatus = .failed
             try? ctx.save()
             return
         }
 
+        let job = BatchTranscriptionJob(
+            recordingID: recording.id,
+            audioURL: recording.fileURL,
+            engine: engine,
+            enqueuedAt: Date(),
+            biasingEntries: biasingEntries,
+            whisperModelURL: whisperModelURL,
+            parakeetModelDir: parakeetModelDir
+        )
+
+        recording.transcription = nil
+        recording.liveTranscription = nil
+        recording.segments = nil
+        recording.postProcessedResults = nil
+        recording.transcriptionStatus = .queued
+        recording.transcriptionEngine = engine.rawValue
+        try? ctx.save()
+
         Task {
-            let url = recording.fileURL
-            let filename = recording.filename
+            await FileLogger.shared.log("Retranscribe enqueued: \(recording.filename), engine=\(engine.displayName)")
+            await BatchTranscriptionQueue.shared.enqueue(job)
+        }
+    }
 
-            await FileLogger.shared.log("Retranscribe start: \(filename), engine=\(engine.displayName)")
+    public func cancelRetranscribe(recording: Recording) {
+        let recordingID = recording.id
+        Task {
+            await BatchTranscriptionQueue.shared.cancel(recordingID: recordingID)
+        }
+    }
 
-            recording.transcription = nil
-            recording.liveTranscription = nil
-            recording.segments = nil
-            recording.postProcessedResults = nil
-            recording.transcriptionStatus = .transcribing
-            recording.transcriptionEngine = engine.rawValue
+    // MARK: - Batch Queue Handlers
+
+    private func handleBatchJobStarted(recordingID: UUID) {
+        guard let ctx = modelContext,
+              let recording = fetchRecording(id: recordingID, context: ctx) else {
+            return
+        }
+
+        recording.transcriptionStatus = .transcribing
+        try? ctx.save()
+
+        Task {
+            await FileLogger.shared.log("Batch job started: \(recording.filename)")
+        }
+    }
+
+    private func handleBatchJobCompleted(recordingID: UUID, text: String, segments: [TranscriptionSegment]) async {
+        guard let ctx = modelContext,
+              let recording = fetchRecording(id: recordingID, context: ctx) else {
+            return
+        }
+
+        let rules = await fetchReplacementRules(context: ctx)
+        var finalText = text
+        if !rules.isEmpty {
+            finalText = TextReplacementService.applyReplacements(text: text, rules: rules)
+        }
+
+        recording.transcription = finalText
+        recording.segments = segments
+        recording.transcriptionStatus = .completed
+        try? ctx.save()
+
+        await FileLogger.shared.log("Batch job completed: \(recording.filename), \(finalText.count) chars")
+
+        let actions = await fetchPostProcessingActions(context: ctx)
+        let autoEnabledCount = actions.filter { $0.isAutoEnabled }.count
+        if autoEnabledCount > 0 {
+            recording.transcriptionStatus = .postProcessing
             try? ctx.save()
 
-            await runBatchTranscription(
-                recording: recording,
-                url: url,
-                context: ctx,
-                engine: engine,
-                saveToClipboard: false,
-                parakeetStreamingFinal: nil,
-                skipClipboard: true
-            )
+            _ = await PostProcessingService.shared.runAllAutoEnabled(on: recording, context: ctx, actions: actions)
 
-            await FileLogger.shared.log("Retranscribe finished: \(filename)")
+            recording.transcriptionStatus = .completed
+            try? ctx.save()
         }
+    }
+
+    private func handleBatchJobFailed(recordingID: UUID, error: Error) {
+        guard let ctx = modelContext,
+              let recording = fetchRecording(id: recordingID, context: ctx) else {
+            return
+        }
+
+        recording.transcriptionStatus = .failed
+        try? ctx.save()
+
+        Task {
+            await FileLogger.shared.log("Batch job failed: \(recording.filename), error=\(error.localizedDescription)", level: .error)
+        }
+    }
+
+    private func handleBatchJobCancelled(recordingID: UUID) {
+        guard let ctx = modelContext,
+              let recording = fetchRecording(id: recordingID, context: ctx) else {
+            return
+        }
+
+        recording.transcriptionStatus = .cancelled
+        try? ctx.save()
+
+        Task {
+            await FileLogger.shared.log("Batch job cancelled: \(recording.filename)")
+        }
+    }
+
+    private func fetchRecording(id: UUID, context: ModelContext) -> Recording? {
+        let descriptor = FetchDescriptor<Recording>(
+            predicate: #Predicate { $0.id == id }
+        )
+        return try? context.fetch(descriptor).first
     }
 }

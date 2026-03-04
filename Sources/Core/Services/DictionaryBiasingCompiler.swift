@@ -6,6 +6,11 @@ struct ParakeetHotword: Sendable {
     let weight: Float
 }
 
+struct InferenceBiasingEntry: Sendable {
+    let text: String
+    let weight: Float
+}
+
 /// A utility to compile user dictionary rules into model-specific structures for inference biasing.
 struct DictionaryBiasingCompiler {
     
@@ -17,18 +22,25 @@ struct DictionaryBiasingCompiler {
     ///   - maxTokens: The maximum number of tokens allowed in the prompt window (typically 224 for Whisper).
     /// - Returns: An array of token IDs representing the biased prompt context.
     static func compileWhisperPromptTokens(from rules: [ReplacementRule], tokenizer: WhisperTokenizer?, maxTokens: Int = 224) -> [Int] {
-        guard let tokenizer = tokenizer, !rules.isEmpty else { return [] }
-        
+        let entries = rules.map {
+            InferenceBiasingEntry(text: $0.textToReplace, weight: $0.weight)
+        }
+        return compileWhisperPromptTokens(from: entries, tokenizer: tokenizer, maxTokens: maxTokens)
+    }
+
+    static func compileWhisperPromptTokens(from entries: [InferenceBiasingEntry], tokenizer: WhisperTokenizer?, maxTokens: Int = 224) -> [Int] {
+        guard let tokenizer = tokenizer, !entries.isEmpty else { return [] }
+
         var promptTokens: [Int] = []
-        
-        for rule in rules {
+
+        for entry in entries {
             // WhisperKit often prefers words starting with a space to match mid-sentence tokens correctly
-            let words = [" " + rule.textToReplace, rule.textToReplace]
+            let words = [" " + entry.text, entry.text]
             for word in words {
                 let encoded = tokenizer.encode(text: word)
                 if !encoded.isEmpty {
                     // We repeat the token sequence based on its weight to artificially "boost" it
-                    let repeatCount = Int(max(1.0, rule.weight))
+                    let repeatCount = Int(max(1.0, entry.weight))
                     for _ in 0..<repeatCount {
                         promptTokens.append(contentsOf: encoded)
                     }
