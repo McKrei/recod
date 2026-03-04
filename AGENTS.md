@@ -305,11 +305,12 @@ When adding a new Settings Page or Feature View:
 
 ## 18. User Dictionary & Inference Biasing (Word Boosting)
 - **Engine:** `TextReplacementService`, `TranscriptionService` (Whisper), `ParakeetTranscriptionService` (NVIDIA).
+- **Concurrency invariant (Parakeet):** `ParakeetTranscriptionService` is a Swift `actor` (NOT `@MainActor`). ONNX decode must never run on the main thread.
 - **Core Concept:** Users can add custom words, jargon, or names. The system increases their recognition probability (Inference Biasing) and corrects minor phonetic mistakes post-transcription (Fuzzy Matching).
 - **Architecture:**
   1. **SwiftData:** `ReplacementRule` stores the target word (`replacementText`), optional typo patterns, a priority `weight`, and a `useFuzzyMatching` flag.
   2. **WhisperKit Biasing:** Injects tokens into `options.promptTokens`. The word is tokenized and repeated based on its `weight` to artificially boost its probability (max 224 tokens).
-  3. **Parakeet Biasing (GPU-PB):** Compiles a dynamic `hotwords.txt` file (e.g., `OpenCode 1.5`) in the temporary directory. Passed to `sherpaOnnxOfflineRecognizerConfig` via `hotwordsFile` to shift logit probabilities during beam search.
+  3. **Parakeet Biasing (GPU-PB):** Convert rules to `ParakeetHotword` (`Sendable`) first, then compile dynamic `hotwords.txt` (e.g., `OpenCode 1.5`) in temp dir. Pass via `sherpaOnnxOfflineRecognizerConfig.hotwordsFile` to shift beam-search probabilities.
   4. **Fuzzy N-gram Matching:** `String+Levenshtein.swift` calculates edit distance. `TextReplacementService` processes exact matches first, then applies a sliding window (N-gram) Levenshtein check to correct both single-word and multi-word phrases automatically (e.g., "клот код" -> "claude code", or "sparkletini" -> "Sparkletini") without needing an exhaustive list of incorrect forms. Tolerates word merging and splitting from the ASR models, as well as minor morphological changes (cases, suffixes).
 - **UI Interaction:** If the user only enters a "Target Word" and leaves the "Typo Patterns" blank, the UI auto-fills the primary pattern with the target word. This enables pure "Word Boosting" (teaching the model a new word) without requiring manual typo mapping.
 

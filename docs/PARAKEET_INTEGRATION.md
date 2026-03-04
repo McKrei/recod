@@ -78,13 +78,25 @@ To reach parity with WhisperKit's `[TranscriptionSegment]`:
 
 ## 6. Batch Transcription (`ParakeetTranscriptionService`)
 
+`ParakeetTranscriptionService` is implemented as a Swift `actor` (not `@MainActor`).
+This is critical: `recognizer.decode(...)` is synchronous and CPU-heavy in sherpa-onnx,
+so actor isolation keeps ONNX inference off the UI thread while preserving safe access
+to the shared recognizer instance.
+
 When a recording stops:
-1. `AppState.stopRecording()` forces `ParakeetStreamingService` to flush any incomplete speech segments.
-2. `AppState` triggers `runBatchTranscription()`.
+1. `RecordingOrchestrator.stopRecording(...)` forces `ParakeetStreamingService` to flush any incomplete speech segments.
+2. `RecordingOrchestrator` triggers `runBatchTranscription()`.
 3. If streaming already produced non-empty text, **that result is used as final** (no full-file re-transcribe).
 4. Full-file batch transcription is used only as a fallback when streaming result is empty.
 5. For fallback on long files, `ParakeetTranscriptionService` uses chunked inference to reduce memory spikes.
 6. BPE segments are generated, rules are applied, and the transcription is saved to `SwiftData`.
+
+### Hotwords and Swift 6 Concurrency
+
+To satisfy strict concurrency checks when crossing actor boundaries, Parakeet hotword
+payload is converted to a `Sendable` value type (`ParakeetHotword`) before calling
+actor-isolated APIs. This keeps the user dictionary behavior unchanged while avoiding
+passing non-Sendable SwiftData models across actors.
 
 ## Summary of Models
 The Parakeet V3 package requires 4 files to function:

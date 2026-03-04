@@ -348,6 +348,27 @@ make test
 
 ---
 
+## Implementation Notes (Actual)
+
+Plan was implemented with two pragmatic adjustments discovered during Swift 6 validation:
+
+1. **Sendable boundary for dictionary rules**
+   - Passing `[ReplacementRule]` directly into actor-isolated Parakeet APIs triggered
+     `sending ... risks causing data races` diagnostics.
+   - Final implementation converts rules to a dedicated `Sendable` payload
+     (`ParakeetHotword`) in orchestrator layer, then passes `[ParakeetHotword]` into
+     `ParakeetTranscriptionService`.
+   - This keeps behavior unchanged while making actor-boundary transfers explicit and safe.
+
+2. **Deterministic cache clear after model deletion**
+   - Initial fallback (`Task { await clearCache() }`) removed compile errors but left a
+     small fire-and-forget timing window.
+   - Final implementation makes `ParakeetModelManager.deleteModel` async and awaits
+     `ParakeetTranscriptionService.shared.clearCache()` directly.
+   - UI call site (`ModelsSettingsView`) now triggers deletion via `Task { await ... }`.
+
+---
+
 ## Структура коммитов
 
 Рекомендуется один коммит:
