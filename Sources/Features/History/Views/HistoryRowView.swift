@@ -64,18 +64,50 @@ struct HistoryRowView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     switch recording.transcriptionStatus ?? .completed {
                     case .transcribing:
-                        HStack(spacing: 8) {
-                            ProgressView()
-                                .controlSize(.small)
-                            Text("Transcribing...")
-                                .foregroundStyle(.secondary)
+                        VStack(alignment: .leading, spacing: 6) {
+                            HStack(spacing: 8) {
+                                ProgressView()
+                                    .controlSize(.small)
+                                Text("Transcribing...")
+                                    .foregroundStyle(.secondary)
+                            }
+
+                            if let text = textForCopy?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty {
+                                Text(text)
+                                    .foregroundStyle(.primary)
+                                    .lineLimit(isExpanded ? nil : 2)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .contentShape(Rectangle())
+                                    .onTapGesture {
+                                        withAnimation(.spring(duration: 0.3)) {
+                                            isExpanded.toggle()
+                                            if !isExpanded { isSegmentsExpanded = false }
+                                        }
+                                    }
+                            }
                         }
                     case .postProcessing:
-                        HStack(spacing: 8) {
-                            ProgressView()
-                                .controlSize(.small)
-                            Text("Post-processing...")
-                                .foregroundStyle(.secondary)
+                        VStack(alignment: .leading, spacing: 6) {
+                            HStack(spacing: 8) {
+                                ProgressView()
+                                    .controlSize(.small)
+                                Text("Post-processing...")
+                                    .foregroundStyle(.secondary)
+                            }
+
+                            if let text = textForCopy?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty {
+                                Text(text)
+                                    .foregroundStyle(.primary)
+                                    .lineLimit(isExpanded ? nil : 2)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .contentShape(Rectangle())
+                                    .onTapGesture {
+                                        withAnimation(.spring(duration: 0.3)) {
+                                            isExpanded.toggle()
+                                            if !isExpanded { isSegmentsExpanded = false }
+                                        }
+                                    }
+                            }
                         }
                     case .streamingTranscription:
                         VStack(alignment: .leading, spacing: 6) {

@@ -51,7 +51,7 @@ final class ParakeetStreamingService: ObservableObject {
 
                 // Fetch only the new samples from the buffer to prevent O(N^2) memory copying
                 // which causes the tap block to drop and audio duration to be 0 seconds.
-                let bufferTotalCount = audioRecorder.getAudioSamples().count
+                let bufferTotalCount = audioRecorder.getAudioSampleCount()
                 guard bufferTotalCount > self.lastProcessedSampleCount else { continue }
                 
                 let newSamples = audioRecorder.getNewAudioSamples(from: self.lastProcessedSampleCount)

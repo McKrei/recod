@@ -11,6 +11,8 @@ import Combine
 final class RecordingOrchestrator: ObservableObject {
     public static let shared = RecordingOrchestrator()
 
+    private typealias TranscriptionPayload = (text: String, segments: [TranscriptionSegment])
+
     @Published public private(set) var isRecording = false
     private var isTransitioning = false
     
@@ -174,7 +176,10 @@ final class RecordingOrchestrator: ObservableObject {
             OverlayState.shared.status = .transcribing
 
             StreamingTranscriptionService.shared.stopStreaming()
-            let _ = ParakeetStreamingService.shared.flushAndCollectRemaining()
+            var parakeetStreamingFinal: (String, [TranscriptionSegment])?
+            if selectedEngine == .parakeet {
+                parakeetStreamingFinal = ParakeetStreamingService.shared.flushAndCollectRemaining()
+            }
             ParakeetStreamingService.shared.stopStreaming()
 
             if let url = await audioRecorder.stopRecording() {
@@ -182,14 +187,24 @@ final class RecordingOrchestrator: ObservableObject {
                 if !hasModel {
                     OverlayState.shared.isVisible = false
                 }
-                await processFinalRecording(url: url, saveToClipboard: saveToClipboard, engine: selectedEngine)
+                await processFinalRecording(
+                    url: url,
+                    saveToClipboard: saveToClipboard,
+                    engine: selectedEngine,
+                    parakeetStreamingFinal: parakeetStreamingFinal
+                )
             } else {
                 OverlayState.shared.isVisible = false
             }
         }
     }
 
-    private func processFinalRecording(url: URL, saveToClipboard: Bool, engine: TranscriptionEngine) async {
+    private func processFinalRecording(
+        url: URL,
+        saveToClipboard: Bool,
+        engine: TranscriptionEngine,
+        parakeetStreamingFinal: (String, [TranscriptionSegment])?
+    ) async {
         guard let ctx = modelContext else {
             await FileLogger.shared.log("ModelContext not set in Orchestrator", level: .error)
             OverlayState.shared.isVisible = false
@@ -216,7 +231,14 @@ final class RecordingOrchestrator: ObservableObject {
             try ctx.save()
             await FileLogger.shared.log("Saved new recording: \(filename)")
 
-            await runBatchTranscription(recording: recording, url: url, context: ctx, engine: engine, saveToClipboard: saveToClipboard)
+            await runBatchTranscription(
+                recording: recording,
+                url: url,
+                context: ctx,
+                engine: engine,
+                saveToClipboard: saveToClipboard,
+                parakeetStreamingFinal: parakeetStreamingFinal
+            )
         } catch {
             await FileLogger.shared.log("Failed to save metadata: \(error)", level: .error)
             OverlayState.shared.isVisible = false
@@ -224,53 +246,38 @@ final class RecordingOrchestrator: ObservableObject {
     }
 
     private func runBatchTranscription(
-        recording: Recording, url: URL, context: ModelContext, engine: TranscriptionEngine, saveToClipboard: Bool
+        recording: Recording,
+        url: URL,
+        context: ModelContext,
+        engine: TranscriptionEngine,
+        saveToClipboard: Bool,
+        parakeetStreamingFinal: (String, [TranscriptionSegment])?
     ) async {
         recording.transcriptionStatus = .transcribing
         try? context.save()
 
         do {
-            let rawText: String
-            let segments: [TranscriptionSegment]
+            let rules = await fetchReplacementRules(context: context)
+            let transcription = try await resolveFinalTranscription(
+                for: engine,
+                recording: recording,
+                url: url,
+                rules: rules,
+                parakeetStreamingFinal: parakeetStreamingFinal
+            )
 
-            var rules: [ReplacementRule] = []
-            let descriptor = FetchDescriptor<ReplacementRule>()
-            do {
-                rules = try context.fetch(descriptor)
-            } catch {
-                await FileLogger.shared.log("Failed to fetch replacement rules: \(error)", level: .error)
-            }
+            recording.segments = transcription.segments
 
-            switch engine {
-            case .whisperKit:
-                guard let id = whisperModelManager?.selectedModelId,
-                      let mUrl = whisperModelManager?.getModelURL(for: id) else { throw NSError(domain: "Recod", code: 1, userInfo: [NSLocalizedDescriptionKey: "WhisperKit model not ready"]) }
-                (rawText, segments) = try await TranscriptionService.shared.transcribe(audioURL: url, modelURL: mUrl, rules: rules)
-            case .parakeet:
-                guard let id = parakeetModelManager?.selectedModelId,
-                      let dir = parakeetModelManager?.getModelDirectory(for: id) else { throw NSError(domain: "Recod", code: 1, userInfo: [NSLocalizedDescriptionKey: "Parakeet model not ready"]) }
-                (rawText, segments) = try await ParakeetTranscriptionService.shared.transcribe(audioURL: url, modelDir: dir, rules: rules)
-            }
-
-            recording.segments = segments
-
-            var finalText = rawText
+            var finalText = transcription.text
             if !rules.isEmpty {
                 await FileLogger.shared.log("Applying \(rules.count) replacement rules...")
-                finalText = TextReplacementService.applyReplacements(text: rawText, rules: rules)
+                finalText = TextReplacementService.applyReplacements(text: transcription.text, rules: rules)
             }
 
             recording.transcription = finalText
             await FileLogger.shared.log("Transcription text ready, checking post-processing actions...", level: .debug)
 
-            let actions: [PostProcessingAction]
-            do {
-                actions = try context.fetch(FetchDescriptor<PostProcessingAction>())
-                await FileLogger.shared.log("Post-processing actions fetched: \(actions.count)", level: .debug)
-            } catch {
-                await FileLogger.shared.log("Failed to fetch post-processing actions: \(error)", level: .error)
-                actions = []
-            }
+            let actions = await fetchPostProcessingActions(context: context)
 
             let enabledCount = actions.filter { $0.isAutoEnabled }.count
             var textForClipboard = finalText
@@ -308,6 +315,96 @@ final class RecordingOrchestrator: ObservableObject {
             await FileLogger.shared.log("Transcription failed: \(error)", level: .error)
             await OverlayState.shared.showError()
         }
+    }
+
+    // MARK: - Finalization Helpers
+
+    private func fetchReplacementRules(context: ModelContext) async -> [ReplacementRule] {
+        do {
+            return try context.fetch(FetchDescriptor<ReplacementRule>())
+        } catch {
+            await FileLogger.shared.log("Failed to fetch replacement rules: \(error)", level: .error)
+            return []
+        }
+    }
+
+    private func fetchPostProcessingActions(context: ModelContext) async -> [PostProcessingAction] {
+        do {
+            let actions = try context.fetch(FetchDescriptor<PostProcessingAction>())
+            await FileLogger.shared.log("Post-processing actions fetched: \(actions.count)", level: .debug)
+            return actions
+        } catch {
+            await FileLogger.shared.log("Failed to fetch post-processing actions: \(error)", level: .error)
+            return []
+        }
+    }
+
+    private func resolveFinalTranscription(
+        for engine: TranscriptionEngine,
+        recording: Recording,
+        url: URL,
+        rules: [ReplacementRule],
+        parakeetStreamingFinal: (String, [TranscriptionSegment])?
+    ) async throws -> TranscriptionPayload {
+        switch engine {
+        case .whisperKit:
+            return try await resolveWhisperFinalTranscription(recording: recording, url: url, rules: rules)
+        case .parakeet:
+            return try await resolveParakeetFinalTranscription(url: url, rules: rules, streamingFinal: parakeetStreamingFinal)
+        }
+    }
+
+    private func resolveWhisperFinalTranscription(
+        recording: Recording,
+        url: URL,
+        rules: [ReplacementRule]
+    ) async throws -> TranscriptionPayload {
+        if let streamedText = nonEmptyTrimmed(recording.liveTranscription) {
+            let streamedSegments = recording.segments ?? []
+            await FileLogger.shared.log(
+                "Using streaming Whisper result for finalization (chars=\(streamedText.count), segments=\(streamedSegments.count))",
+                level: .info
+            )
+            return (streamedText, streamedSegments)
+        }
+
+        guard let id = whisperModelManager?.selectedModelId,
+              let modelURL = whisperModelManager?.getModelURL(for: id) else {
+            throw NSError(domain: "Recod", code: 1, userInfo: [NSLocalizedDescriptionKey: "WhisperKit model not ready"])
+        }
+
+        await FileLogger.shared.log("Streaming Whisper result empty. Falling back to full-file batch transcription.", level: .warning)
+        let result = try await TranscriptionService.shared.transcribe(audioURL: url, modelURL: modelURL, rules: rules)
+        return (result.0, result.1)
+    }
+
+    private func resolveParakeetFinalTranscription(
+        url: URL,
+        rules: [ReplacementRule],
+        streamingFinal: (String, [TranscriptionSegment])?
+    ) async throws -> TranscriptionPayload {
+        if let streamedText = nonEmptyTrimmed(streamingFinal?.0) {
+            let streamedSegments = streamingFinal?.1 ?? []
+            await FileLogger.shared.log(
+                "Using streaming Parakeet result for finalization (chars=\(streamedText.count), segments=\(streamedSegments.count))",
+                level: .info
+            )
+            return (streamedText, streamedSegments)
+        }
+
+        guard let id = parakeetModelManager?.selectedModelId,
+              let modelDir = parakeetModelManager?.getModelDirectory(for: id) else {
+            throw NSError(domain: "Recod", code: 1, userInfo: [NSLocalizedDescriptionKey: "Parakeet model not ready"])
+        }
+
+        await FileLogger.shared.log("Streaming Parakeet result empty. Falling back to full-file batch transcription.", level: .warning)
+        let result = try await ParakeetTranscriptionService.shared.transcribe(audioURL: url, modelDir: modelDir, rules: rules)
+        return (result.0, result.1)
+    }
+
+    private func nonEmptyTrimmed(_ value: String?) -> String? {
+        let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return trimmed.isEmpty ? nil : trimmed
     }
 
     public func revealRecordings() {

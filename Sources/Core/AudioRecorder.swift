@@ -78,6 +78,11 @@ public class AudioRecorder: NSObject, ObservableObject, @unchecked Sendable {
         streamBuffer.getSamples()
     }
 
+    /// Returns the number of accumulated 16kHz streaming samples without copying the full buffer.
+    public func getAudioSampleCount() -> Int {
+        streamBuffer.getSampleCount()
+    }
+
     /// Returns the accumulated audio samples added after the specified index.
     /// Useful for streaming transcription to avoid copying the entire buffer repeatedly.
     public func getNewAudioSamples(from index: Int) -> [Float] {

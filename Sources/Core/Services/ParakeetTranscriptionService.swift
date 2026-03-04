@@ -32,6 +32,9 @@ enum ParakeetTranscriptionError: LocalizedError {
 final class ParakeetTranscriptionService {
     static let shared = ParakeetTranscriptionService()
 
+    private let longAudioChunkSeconds: Double = 30.0
+    private let longAudioChunkThresholdSeconds: Double = 120.0
+
     private var recognizer: SherpaOnnxOfflineRecognizer?
     private var currentModelDir: URL?
 
@@ -196,11 +199,23 @@ final class ParakeetTranscriptionService {
         let samples = try await AudioUtilities.load16kHzMonoFloatSamples(from: audioURL)
         await FileLogger.shared.log("Audio loaded: \(samples.count) samples (\(String(format: "%.1f", Double(samples.count) / 16000.0))s)")
 
-        // Run inference
+        // Run inference (chunked for long audio to avoid memory spikes/freezes)
         await FileLogger.shared.log("Starting Parakeet inference...")
         let inferStart = Date()
 
-        let (text, segments) = transcribe(audioSamples: samples)
+        let audioSeconds = Double(samples.count) / 16000.0
+        let text: String
+        let segments: [TranscriptionSegment]
+
+        if audioSeconds >= longAudioChunkThresholdSeconds {
+            await FileLogger.shared.log(
+                String(format: "Using chunked Parakeet inference: %.1fs audio, chunk=%.0fs", audioSeconds, longAudioChunkSeconds),
+                level: .info
+            )
+            (text, segments) = await transcribeLongAudioInChunks(samples: samples, chunkSeconds: longAudioChunkSeconds)
+        } else {
+            (text, segments) = transcribe(audioSamples: samples)
+        }
 
         let inferDuration = Date().timeIntervalSince(inferStart)
         let totalDuration = Date().timeIntervalSince(startTime)
@@ -211,6 +226,43 @@ final class ParakeetTranscriptionService {
         await FileLogger.shared.log("--- Parakeet Transcription End ---")
 
         return (text, segments)
+    }
+
+    // MARK: - Long Audio Transcription
+
+    private func transcribeLongAudioInChunks(samples: [Float], chunkSeconds: Double) async -> (String, [TranscriptionSegment]) {
+        guard !samples.isEmpty else { return ("", []) }
+
+        let chunkSize = max(Int(chunkSeconds * 16000.0), 16000)
+        var index = 0
+
+        var allTextParts: [String] = []
+        var allSegments: [TranscriptionSegment] = []
+
+        while index < samples.count {
+            let end = min(index + chunkSize, samples.count)
+            let chunk = Array(samples[index..<end])
+            let offset = Double(index) / 16000.0
+
+            autoreleasepool {
+                let (chunkText, chunkSegments) = transcribe(audioSamples: chunk, timeOffset: offset)
+                if !chunkText.isEmpty {
+                    allTextParts.append(chunkText)
+                }
+                if !chunkSegments.isEmpty {
+                    allSegments.append(contentsOf: chunkSegments)
+                }
+            }
+
+            index = end
+
+            // Give MainActor a chance to process UI events between heavy chunks.
+            if index < samples.count {
+                await Task.yield()
+            }
+        }
+
+        return (allTextParts.joined(separator: " "), allSegments)
     }
 
     // MARK: - Cache Management

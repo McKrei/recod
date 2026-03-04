@@ -49,6 +49,7 @@ Parakeet strictly requires **16kHz, Mono, Float32** audio samples.
 Instead of keeping a full array of all recorded samples (which caused `O(N^2)` memory copying issues and 0-second file bugs during long recordings), `AudioRecorder` provides:
 - `getAudioSamples()`: Returns the full buffer (used by WhisperKit for timestamp clipping).
 - `getNewAudioSamples(from:)`: Returns only the delta (newly recorded samples) since the last index.
+- `getAudioSampleCount()`: Returns sample count without copying the full buffer (used by Parakeet streaming poll loop).
 
 ### `AudioUtilities`
 Batch transcription extracts the WAV file using `AudioUtilities.load16kHzMonoFloatSamples(from:)`. This utility reads native WAV formats (e.g., 48kHz Stereo) and safely converts them using `AVAudioConverter` on a background thread.
@@ -80,9 +81,10 @@ To reach parity with WhisperKit's `[TranscriptionSegment]`:
 When a recording stops:
 1. `AppState.stopRecording()` forces `ParakeetStreamingService` to flush any incomplete speech segments.
 2. `AppState` triggers `runBatchTranscription()`.
-3. The WAV file is loaded via `AudioUtilities`.
-4. The full array of samples is sent to `ParakeetTranscriptionService.shared.transcribe(audioSamples:)`.
-5. BPE segments are generated, rules are applied, and the transcription is saved to `SwiftData`.
+3. If streaming already produced non-empty text, **that result is used as final** (no full-file re-transcribe).
+4. Full-file batch transcription is used only as a fallback when streaming result is empty.
+5. For fallback on long files, `ParakeetTranscriptionService` uses chunked inference to reduce memory spikes.
+6. BPE segments are generated, rules are applied, and the transcription is saved to `SwiftData`.
 
 ## Summary of Models
 The Parakeet V3 package requires 4 files to function:

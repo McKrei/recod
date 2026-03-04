@@ -15,6 +15,8 @@ public struct RecordingSyncService {
         
         let descriptor = FetchDescriptor<Recording>()
         guard let existingRecordings = try? modelContext.fetch(descriptor) else { return }
+
+        recoverInterruptedTranscriptions(existingRecordings)
         let existingFilenames = Set(existingRecordings.map { $0.filename })
         
         for fileURL in files {
@@ -38,5 +40,28 @@ public struct RecordingSyncService {
         }
         
         try? modelContext.save()
+    }
+
+    private func recoverInterruptedTranscriptions(_ recordings: [Recording]) {
+        for recording in recordings {
+            guard let status = recording.transcriptionStatus else { continue }
+
+            switch status {
+            case .streamingTranscription, .transcribing, .postProcessing:
+                let trimmedTranscription = recording.transcription?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                let trimmedLive = recording.liveTranscription?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+
+                if !trimmedTranscription.isEmpty {
+                    recording.transcriptionStatus = .completed
+                } else if !trimmedLive.isEmpty {
+                    recording.transcription = trimmedLive
+                    recording.transcriptionStatus = .completed
+                } else {
+                    recording.transcriptionStatus = .failed
+                }
+            case .pending, .completed, .failed:
+                continue
+            }
+        }
     }
 }

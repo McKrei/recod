@@ -291,7 +291,7 @@ When adding a new Settings Page or Feature View:
   4. **Performance Optimization:** Uses `clipTimestamps` from the last confirmed segment to avoid re-transcribing the entire buffer from the beginning.
   5. Segments are confirmed if they are followed by at least two more segments (agreement logic to avoid flickering text).
 - **Data Model Updates**: During recording, a `Recording` object is immediately saved to SwiftData with `transcriptionStatus = .streamingTranscription`. The `liveTranscription` and `segments` arrays are updated reactively on the fly.
-- **Final Pass**: When the recording stops, streaming is cancelled, and `TranscriptionService.transcribe()` runs a full batch transcription on the final saved WAV file to produce the highest accuracy result (replacing the live transcription).
+- **Final Pass**: When recording stops, streaming is cancelled and finalized first. If streaming already produced non-empty text, that text is used as final result. Full-file batch transcription is a fallback only when streaming result is empty.
 
 ## 17. Clipboard Operations & Paste Preservation
 - **Engine:** Custom `ClipboardService.insertText(_:preserveClipboard:)`.

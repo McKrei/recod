@@ -74,6 +74,11 @@ public final class AudioStreamBuffer: @unchecked Sendable {
         queue.sync { buffer }
     }
 
+    /// Returns the current number of accumulated samples without copying.
+    public func getSampleCount() -> Int {
+        queue.sync { buffer.count }
+    }
+
     /// Returns the accumulated audio samples added after the specified index.
     /// Useful for streaming transcription to avoid copying the entire buffer repeatedly.
     public func getNewSamples(from index: Int) -> [Float] {
