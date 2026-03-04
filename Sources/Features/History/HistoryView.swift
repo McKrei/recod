@@ -36,7 +36,8 @@ struct HistoryView: View {
                                 recording: recording,
                                 audioPlayer: audioPlayer,
                                 onDelete: { deleteRecording(recording) },
-                                onDeleteAudioOnly: { deleteAudioOnly(recording) }
+                                onDeleteAudioOnly: { deleteAudioOnly(recording) },
+                                onRetranscribe: { retranscribeRecording(recording) }
                             )
                         }
                     }
@@ -111,6 +112,10 @@ struct HistoryView: View {
                 }
             }
         }
+    }
+
+    private func retranscribeRecording(_ recording: Recording) {
+        RecordingOrchestrator.shared.retranscribe(recording: recording)
     }
 }
 

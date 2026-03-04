@@ -6,6 +6,7 @@ struct HistoryRowView: View {
     let audioPlayer: AudioPlayer
     let onDelete: () -> Void
     let onDeleteAudioOnly: () -> Void
+    let onRetranscribe: () -> Void
 
     @State private var isHovering = false
     @State private var isExpanded = false
@@ -343,6 +344,12 @@ struct HistoryRowView: View {
                     onDeleteAudioOnly()
                 } label: {
                     Label("Delete Audio Only", systemImage: "waveform.slash")
+                }
+
+                Button {
+                    onRetranscribe()
+                } label: {
+                    Label("Retranscribe", systemImage: "arrow.trianglehead.2.clockwise.rotate.90.circle")
                 }
             }
 

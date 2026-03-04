@@ -89,17 +89,21 @@ final class ParakeetTranscriptionService {
         // Compile hotwords file if rules exist
         var hotwordsPath = ""
         var avgScore: Float = 1.5
+        var useHotwords = false
         
         if let result = DictionaryBiasingCompiler.compileParakeetHotwordsFile(from: rules) {
             hotwordsPath = result.path
             avgScore = result.avgScore
+            useHotwords = true
             await FileLogger.shared.log("Compiled hotwords into \(hotwordsPath) (avg weight: \(avgScore))")
         }
 
+        let decodingMethod = useHotwords ? "modified_beam_search" : "greedy_search"
+        
         var config = sherpaOnnxOfflineRecognizerConfig(
             featConfig: featConfig,
             modelConfig: modelConfig,
-            decodingMethod: "greedy_search",
+            decodingMethod: decodingMethod,
             hotwordsFile: hotwordsPath,
             hotwordsScore: avgScore
         )

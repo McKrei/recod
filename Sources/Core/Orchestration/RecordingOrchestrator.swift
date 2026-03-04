@@ -251,7 +251,8 @@ final class RecordingOrchestrator: ObservableObject {
         context: ModelContext,
         engine: TranscriptionEngine,
         saveToClipboard: Bool,
-        parakeetStreamingFinal: (String, [TranscriptionSegment])?
+        parakeetStreamingFinal: (String, [TranscriptionSegment])?,
+        skipClipboard: Bool = false
     ) async {
         recording.transcriptionStatus = .transcribing
         try? context.save()
@@ -304,8 +305,10 @@ final class RecordingOrchestrator: ObservableObject {
             
             // Вставляем текст сразу же, чтобы юзер не ждал конца анимации. 
             // Это запустится параллельно с отображением галочки.
-            Task {
-                await ClipboardService.shared.insertText(textForClipboard, preserveClipboard: !saveToClipboard)
+            if !skipClipboard {
+                Task {
+                    await ClipboardService.shared.insertText(textForClipboard, preserveClipboard: !saveToClipboard)
+                }
             }
 
             await OverlayState.shared.showSuccess()
@@ -409,5 +412,56 @@ final class RecordingOrchestrator: ObservableObject {
 
     public func revealRecordings() {
         audioRecorder.revealRecordingsInFinder()
+    }
+
+    // MARK: - Retranscribe
+
+    /// Повторно транскрибирует существующую запись текущим движком.
+    /// Не показывает overlay, не вставляет текст в буфер.
+    public func retranscribe(recording: Recording) {
+        guard let ctx = modelContext else {
+            Task { await FileLogger.shared.log("retranscribe: modelContext not set", level: .error) }
+            return
+        }
+
+        let engine = AppState.shared.selectedEngine
+
+        guard checkEngineReady(engine: engine) else {
+            Task { await FileLogger.shared.log("retranscribe: engine \(engine.displayName) not ready", level: .error) }
+            recording.transcription = nil
+            recording.liveTranscription = nil
+            recording.segments = nil
+            recording.postProcessedResults = nil
+            recording.transcriptionStatus = .failed
+            try? ctx.save()
+            return
+        }
+
+        Task {
+            let url = recording.fileURL
+            let filename = recording.filename
+
+            await FileLogger.shared.log("Retranscribe start: \(filename), engine=\(engine.displayName)")
+
+            recording.transcription = nil
+            recording.liveTranscription = nil
+            recording.segments = nil
+            recording.postProcessedResults = nil
+            recording.transcriptionStatus = .transcribing
+            recording.transcriptionEngine = engine.rawValue
+            try? ctx.save()
+
+            await runBatchTranscription(
+                recording: recording,
+                url: url,
+                context: ctx,
+                engine: engine,
+                saveToClipboard: false,
+                parakeetStreamingFinal: nil,
+                skipClipboard: true
+            )
+
+            await FileLogger.shared.log("Retranscribe finished: \(filename)")
+        }
     }
 }
