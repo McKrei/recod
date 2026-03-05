@@ -13,6 +13,15 @@ final class PostProcessingAction {
     var sortOrder: Int
     var createdAt: Date
 
+    // MARK: - Save to File
+
+    @Attribute(originalName: "saveToFileEnabled") var saveToFileEnabledRaw: Bool?
+    var saveToFileMode: String?
+    var saveToFilePath: String?
+    var saveToFileTemplate: String?
+    var saveToFileSeparator: String?
+    var saveToFileExtension: String?
+
     init(
         id: UUID = UUID(),
         name: String,
@@ -22,7 +31,13 @@ final class PostProcessingAction {
         isAutoEnabled: Bool = false,
         hotkey: HotKeyShortcut? = nil,
         sortOrder: Int = 0,
-        createdAt: Date = .now
+        createdAt: Date = .now,
+        saveToFileEnabled: Bool = false,
+        saveToFileMode: String? = nil,
+        saveToFilePath: String? = nil,
+        saveToFileTemplate: String? = nil,
+        saveToFileSeparator: String? = nil,
+        saveToFileExtension: String? = nil
     ) {
         self.id = id
         self.name = name
@@ -33,5 +48,39 @@ final class PostProcessingAction {
         self.hotkey = hotkey
         self.sortOrder = sortOrder
         self.createdAt = createdAt
+        self.saveToFileEnabledRaw = saveToFileEnabled
+        self.saveToFileMode = saveToFileMode
+        self.saveToFilePath = saveToFilePath
+        self.saveToFileTemplate = saveToFileTemplate
+        self.saveToFileSeparator = saveToFileSeparator
+        self.saveToFileExtension = saveToFileExtension
+    }
+}
+
+extension PostProcessingAction {
+    static let defaultSaveToFileTemplate = "recod-{YYYY}-{MM}-{DD}_{HH}{mm}{ss}"
+    static let defaultSaveToFileSeparator = "\\n---\\n"
+    static let defaultSaveToFileExtension = ".txt"
+
+    var saveToFileEnabled: Bool {
+        get { saveToFileEnabledRaw ?? false }
+        set { saveToFileEnabledRaw = newValue }
+    }
+
+    var fileSaveMode: SaveToFileMode {
+        get { SaveToFileMode(rawValue: saveToFileMode ?? "") ?? .newFile }
+        set { saveToFileMode = newValue.rawValue }
+    }
+
+    var effectiveSeparator: String {
+        let raw = saveToFileSeparator ?? Self.defaultSaveToFileSeparator
+        return raw
+            .replacingOccurrences(of: "\\n", with: "\n")
+            .replacingOccurrences(of: "\\t", with: "\t")
+    }
+
+    var effectiveExtension: String {
+        let ext = saveToFileExtension?.trimmingCharacters(in: .whitespacesAndNewlines) ?? Self.defaultSaveToFileExtension
+        return ext.hasPrefix(".") ? ext : ".\(ext)"
     }
 }

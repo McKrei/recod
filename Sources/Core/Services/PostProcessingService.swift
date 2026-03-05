@@ -19,7 +19,10 @@ final class PostProcessingService {
         )
 
         let finalPrompt = action.prompt.isEmpty ? "Transcript:\n${output}" : action.prompt
-        let userText = finalPrompt.replacingOccurrences(of: "${output}", with: sourceText)
+        let outputWithTimestamps = formatOutputWithTimestamps(for: recording, fallbackText: sourceText)
+        let userText = finalPrompt
+            .replacingOccurrences(of: "${output_with_timestamps}", with: outputWithTimestamps)
+            .replacingOccurrences(of: "${output}", with: sourceText)
         let inputMessages = [
             LLMMessage(role: .system, content: "You are a text post-processor. Return only final transformed text."),
             LLMMessage(role: .user, content: userText)
@@ -49,6 +52,10 @@ final class PostProcessingService {
 
         recording.postProcessedResults = results
         try context.save()
+
+        if action.saveToFileEnabled, !normalizedOutput.isEmpty {
+            await FileOutputService.shared.saveText(normalizedOutput, for: action)
+        }
 
         await FileLogger.shared.log(
             "Post-processing action success: action=\(action.name), outputChars=\(assistant.content.count), changed=\(changed), outputPreview=\(preview)",
@@ -112,5 +119,30 @@ final class PostProcessingService {
         try context.save()
 
         try await runAction(action, on: recording, context: context)
+    }
+
+    private func formatOutputWithTimestamps(for recording: Recording, fallbackText: String) -> String {
+        guard let segments = recording.segments, !segments.isEmpty else {
+            return fallbackText
+        }
+
+        let lines = segments.compactMap { segment -> String? in
+            let text = segment.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !text.isEmpty else { return nil }
+            return "[\(formatTimestamp(segment.start))] \(text)"
+        }
+
+        if lines.isEmpty {
+            return fallbackText
+        }
+
+        return lines.joined(separator: "\n")
+    }
+
+    private func formatTimestamp(_ time: TimeInterval) -> String {
+        let totalSeconds = max(0, Int(time))
+        let minutes = totalSeconds / 60
+        let seconds = totalSeconds % 60
+        return String(format: "%d:%02d", minutes, seconds)
     }
 }

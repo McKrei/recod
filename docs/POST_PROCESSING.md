@@ -14,7 +14,7 @@ Current behavior:
 ### `PostProcessingAction` (SwiftData `@Model`)
 Stored in local database and configurable in Settings:
 - `name`
-- `prompt` (supports `${output}` placeholder)
+- `prompt` (supports `${output}` and `${output_with_timestamps}` placeholders)
 - `providerID`
 - `modelID`
 - `isAutoEnabled` (single-active invariant)
@@ -61,6 +61,17 @@ Transcript:
 ${output}
 ```
 
+Available prompt placeholders:
+- `${output}` - plain transcription text.
+- `${output_with_timestamps}` - transcription with per-segment time labels, one line per segment:
+
+```text
+[0:05] First phrase
+[0:12] Next phrase
+```
+
+If segment timeline is unavailable, `${output_with_timestamps}` falls back to plain transcription text.
+
 ### History
 - Completed rows with non-empty transcription and existing actions show inline manual run menu.
 - Menu label shows either first 3 chars of last action name or `wand.and.stars` placeholder.
@@ -74,6 +85,29 @@ ${output}
 - `.postProcessing`: blue orbital loader, 5 dots.
 
 All visual constants live in `AppTheme`.
+
+## Save to File
+Each post-processing action can optionally save the LLM output to a local file.
+
+### Configuration (per action)
+- `saveToFileEnabled` - toggle in AddActionView.
+- `saveToFileMode` - `newFile` (creates a file per recording) or `existingFile` (appends to one file).
+- `saveToFileTemplate` - filename template with placeholders: `{YYYY}`, `{YY}`, `{MM}`, `{DD}`, `{HH}`, `{mm}`, `{ss}`.
+- `saveToFileSeparator` - text inserted between entries (supports `\n`, `\t` escapes).
+- `saveToFileExtension` - file extension (`.txt` / `.md`).
+
+### Behavior
+- Save runs inside `PostProcessingService.runAction()` after a successful LLM call.
+- Works for both auto-enabled and manual (History) runs.
+- Errors are logged and do not interrupt clipboard/pipeline flow.
+- If file does not exist, it is created; first entry has no leading separator.
+- In Settings UI, path state is mode-aware: directory path and append-file path are stored separately while editing the action.
+- Runtime validates path type before writing: `newFile` expects a directory path, `existingFile` expects a file path.
+
+### File Paths
+- No sandbox: paths are stored as plain strings in SwiftData.
+- User selects directory/file via `NSOpenPanel`.
+- Add/Edit action form is scrollable; action buttons stay pinned at the bottom for long configurations.
 
 ## Logging
 Key points are logged to `~/Library/Application Support/Recod/Logs/app.log`:
