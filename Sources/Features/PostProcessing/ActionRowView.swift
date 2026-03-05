@@ -20,6 +20,13 @@ struct ActionRowView: View {
                     Text(action.name)
                         .font(.headline)
 
+                    if action.saveToFileEnabled {
+                        Image(systemName: "doc.badge.arrow.up")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .help("Saves response to file")
+                    }
+
                     Text(providerTitle)
                         .font(.caption)
                         .foregroundStyle(.secondary)

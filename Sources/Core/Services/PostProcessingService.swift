@@ -53,6 +53,10 @@ final class PostProcessingService {
         recording.postProcessedResults = results
         try context.save()
 
+        if action.saveToFileEnabled, !normalizedOutput.isEmpty {
+            await FileOutputService.shared.saveText(normalizedOutput, for: action)
+        }
+
         await FileLogger.shared.log(
             "Post-processing action success: action=\(action.name), outputChars=\(assistant.content.count), changed=\(changed), outputPreview=\(preview)",
             level: .info

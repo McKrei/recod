@@ -41,6 +41,46 @@ struct PostProcessingActionDTO: Codable {
     let hotkey: HotKeyShortcut?
     let sortOrder: Int
     let createdAt: Date
+    let saveToFileEnabled: Bool?
+    let saveToFileMode: String?
+    let saveToFilePath: String?
+    let saveToFileTemplate: String?
+    let saveToFileSeparator: String?
+    let saveToFileExtension: String?
+
+    init(
+        id: UUID,
+        name: String,
+        prompt: String,
+        providerID: String,
+        modelID: String,
+        isAutoEnabled: Bool,
+        hotkey: HotKeyShortcut?,
+        sortOrder: Int,
+        createdAt: Date,
+        saveToFileEnabled: Bool? = nil,
+        saveToFileMode: String? = nil,
+        saveToFilePath: String? = nil,
+        saveToFileTemplate: String? = nil,
+        saveToFileSeparator: String? = nil,
+        saveToFileExtension: String? = nil
+    ) {
+        self.id = id
+        self.name = name
+        self.prompt = prompt
+        self.providerID = providerID
+        self.modelID = modelID
+        self.isAutoEnabled = isAutoEnabled
+        self.hotkey = hotkey
+        self.sortOrder = sortOrder
+        self.createdAt = createdAt
+        self.saveToFileEnabled = saveToFileEnabled
+        self.saveToFileMode = saveToFileMode
+        self.saveToFilePath = saveToFilePath
+        self.saveToFileTemplate = saveToFileTemplate
+        self.saveToFileSeparator = saveToFileSeparator
+        self.saveToFileExtension = saveToFileExtension
+    }
 }
 
 struct ImportSummary: Equatable {
@@ -195,7 +235,13 @@ final class DataBackupService {
             isAutoEnabled: action.isAutoEnabled,
             hotkey: action.hotkey,
             sortOrder: action.sortOrder,
-            createdAt: action.createdAt
+            createdAt: action.createdAt,
+            saveToFileEnabled: action.saveToFileEnabled,
+            saveToFileMode: action.saveToFileMode,
+            saveToFilePath: action.saveToFilePath,
+            saveToFileTemplate: action.saveToFileTemplate,
+            saveToFileSeparator: action.saveToFileSeparator,
+            saveToFileExtension: action.saveToFileExtension
         )
     }
 
@@ -270,7 +316,13 @@ final class DataBackupService {
             isAutoEnabled: isAutoEnabled,
             hotkey: dto.hotkey,
             sortOrder: dto.sortOrder,
-            createdAt: dto.createdAt
+            createdAt: dto.createdAt,
+            saveToFileEnabled: dto.saveToFileEnabled ?? false,
+            saveToFileMode: dto.saveToFileMode,
+            saveToFilePath: dto.saveToFilePath,
+            saveToFileTemplate: dto.saveToFileTemplate,
+            saveToFileSeparator: dto.saveToFileSeparator,
+            saveToFileExtension: dto.saveToFileExtension
         )
     }
 }

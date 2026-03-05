@@ -1,5 +1,7 @@
 import SwiftUI
 import SwiftData
+import AppKit
+import UniformTypeIdentifiers
 
 struct AddActionView: View {
     @Environment(\.modelContext) private var modelContext
@@ -22,6 +24,15 @@ struct AddActionView: View {
     @State private var modelsError: String?
     @State private var modelsFetchTask: Task<Void, Never>?
 
+    // Save to File
+    @State private var saveToFileEnabled = false
+    @State private var saveToFileMode: SaveToFileMode = .newFile
+    @State private var saveToFileDirectoryPath = ""
+    @State private var saveToFileExistingFilePath = ""
+    @State private var saveToFileTemplate = PostProcessingAction.defaultSaveToFileTemplate
+    @State private var saveToFileSeparator = PostProcessingAction.defaultSaveToFileSeparator
+    @State private var saveToFileExtension = PostProcessingAction.defaultSaveToFileExtension
+
     private static let defaultPrompt = """
     Transcript:
     ${output}
@@ -29,6 +40,10 @@ struct AddActionView: View {
 
     private static let outputPlaceholder = "${output}"
     private static let outputWithTimestampsPlaceholder = "${output_with_timestamps}"
+    private static let defaultFileTemplate = PostProcessingAction.defaultSaveToFileTemplate
+    private static let defaultSeparator = PostProcessingAction.defaultSaveToFileSeparator
+    private static let defaultExtension = PostProcessingAction.defaultSaveToFileExtension
+    private static let fileTemplatePlaceholders = ["{YYYY}", "{YY}", "{MM}", "{DD}", "{HH}", "{mm}", "{ss}"]
 
     private var isEditing: Bool { actionToEdit != nil }
 
@@ -43,103 +58,10 @@ struct AddActionView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text(isEditing ? "Edit Action" : "Add Action")
-                .font(.headline)
-
-            GroupBox {
-                VStack(alignment: .leading, spacing: 12) {
-                    TextField("Action name", text: $actionName)
-
-                    ProviderPickerView(providers: providers, selectedProviderID: $selectedProviderID)
-
-                    if selectedProvider?.isCustom == true {
-                        TextField("Custom provider name", text: $customProviderName)
-                            .textFieldStyle(.roundedBorder)
-
-                        TextField("Base URL", text: $customBaseURL)
-                            .textFieldStyle(.roundedBorder)
-
-                        Text("Default local endpoint: \(LLMProvider.customDefaultBaseURL)")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-
-                    SecureField("API key", text: $providerAPIKey)
-                        .textFieldStyle(.roundedBorder)
-
-                    HStack(spacing: 10) {
-                        Picker("Model", selection: $modelID) {
-                            if availableModels.isEmpty {
-                                Text(isLoadingModels ? "Loading..." : "No models")
-                                    .tag("")
-                            }
-
-                            ForEach(availableModels, id: \.self) { model in
-                                Text(model)
-                                    .tag(model)
-                            }
-                        }
-                        .pickerStyle(.menu)
-                        .disabled(isLoadingModels || availableModels.isEmpty)
-
-                        if isLoadingModels {
-                            ProgressView()
-                                .controlSize(.small)
-                        }
-
-                        Button {
-                            refreshModels()
-                        } label: {
-                            Image(systemName: "arrow.clockwise")
-                        }
-                        .buttonStyle(.plain)
-                        .help("Refresh models")
-                    }
-
-                    if let modelsError, !modelsError.isEmpty {
-                        Text(modelsError)
-                            .font(.caption)
-                            .foregroundStyle(.orange)
-                    }
-                }
+        VStack(alignment: .leading, spacing: 0) {
+            ScrollView {
+                formContent
             }
-            .groupBoxStyle(GlassGroupBoxStyle())
-
-            GroupBox {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Prompt")
-                        .font(.subheadline.weight(.semibold))
-
-                    TextEditor(text: $promptText)
-                        .font(.body)
-                        .frame(minHeight: 160)
-                        .padding(6)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: AppTheme.smallCornerRadius)
-                                .stroke(Color.white.opacity(0.15), lineWidth: 1)
-                        )
-
-                    VStack(alignment: .leading, spacing: AppTheme.spacing) {
-                        Text("Quick placeholders")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-
-                        HStack(spacing: AppTheme.spacing) {
-                            Button(Self.outputPlaceholder) {
-                                insertPromptPlaceholder(Self.outputPlaceholder)
-                            }
-                            .buttonStyle(.bordered)
-
-                            Button(Self.outputWithTimestampsPlaceholder) {
-                                insertPromptPlaceholder(Self.outputWithTimestampsPlaceholder)
-                            }
-                            .buttonStyle(.bordered)
-                        }
-                    }
-                }
-            }
-            .groupBoxStyle(GlassGroupBoxStyle())
 
             HStack {
                 Spacer()
@@ -156,9 +78,11 @@ struct AddActionView: View {
                 .disabled(!canSave)
                 .keyboardShortcut(.defaultAction)
             }
+            .padding(.horizontal, AppTheme.padding)
+            .padding(.top, AppTheme.spacing)
+            .padding(.bottom, AppTheme.padding)
         }
-        .padding(AppTheme.padding)
-        .frame(width: 620)
+        .frame(minWidth: 620, maxWidth: 620, minHeight: 560, maxHeight: 760)
         .background(.ultraThinMaterial)
         .onAppear {
             loadProviders()
@@ -180,6 +104,130 @@ struct AddActionView: View {
         .onChange(of: providerAPIKey) { _, _ in
             refreshModelsDebounced()
         }
+    }
+
+    private var formContent: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text(isEditing ? "Edit Action" : "Add Action")
+                .font(.headline)
+
+            providerSection
+            promptSection
+            AddActionSaveToFileSection(
+                saveToFileEnabled: $saveToFileEnabled,
+                saveToFileMode: $saveToFileMode,
+                saveToFileDirectoryPath: $saveToFileDirectoryPath,
+                saveToFileExistingFilePath: $saveToFileExistingFilePath,
+                saveToFileTemplate: $saveToFileTemplate,
+                saveToFileSeparator: $saveToFileSeparator,
+                saveToFileExtension: $saveToFileExtension,
+                defaultFileTemplate: Self.defaultFileTemplate,
+                defaultSeparator: Self.defaultSeparator,
+                fileTemplatePlaceholders: Self.fileTemplatePlaceholders,
+                chooseDirectory: chooseDirectory,
+                chooseExistingFile: chooseExistingFile,
+                abbreviatePath: abbreviatePath
+            )
+        }
+        .padding(AppTheme.padding)
+    }
+
+    private var providerSection: some View {
+        GroupBox {
+            VStack(alignment: .leading, spacing: 12) {
+                TextField("Action name", text: $actionName)
+
+                ProviderPickerView(providers: providers, selectedProviderID: $selectedProviderID)
+
+                if selectedProvider?.isCustom == true {
+                    TextField("Custom provider name", text: $customProviderName)
+                        .textFieldStyle(.roundedBorder)
+
+                    TextField("Base URL", text: $customBaseURL)
+                        .textFieldStyle(.roundedBorder)
+
+                    Text("Default local endpoint: \(LLMProvider.customDefaultBaseURL)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                SecureField("API key", text: $providerAPIKey)
+                    .textFieldStyle(.roundedBorder)
+
+                HStack(spacing: 10) {
+                    Picker("Model", selection: $modelID) {
+                        if availableModels.isEmpty {
+                            Text(isLoadingModels ? "Loading..." : "No models")
+                                .tag("")
+                        }
+
+                        ForEach(availableModels, id: \.self) { model in
+                            Text(model)
+                                .tag(model)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    .disabled(isLoadingModels || availableModels.isEmpty)
+
+                    if isLoadingModels {
+                        ProgressView()
+                            .controlSize(.small)
+                    }
+
+                    Button {
+                        refreshModels()
+                    } label: {
+                        Image(systemName: "arrow.clockwise")
+                    }
+                    .buttonStyle(.plain)
+                    .help("Refresh models")
+                }
+
+                if let modelsError, !modelsError.isEmpty {
+                    Text(modelsError)
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                }
+            }
+        }
+        .groupBoxStyle(GlassGroupBoxStyle())
+    }
+
+    private var promptSection: some View {
+        GroupBox {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Prompt")
+                    .font(.subheadline.weight(.semibold))
+
+                TextEditor(text: $promptText)
+                    .font(.body)
+                    .frame(minHeight: 160)
+                    .padding(6)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: AppTheme.smallCornerRadius)
+                            .stroke(Color.white.opacity(0.15), lineWidth: 1)
+                    )
+
+                VStack(alignment: .leading, spacing: AppTheme.spacing) {
+                    Text("Quick placeholders")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
+                    HStack(spacing: AppTheme.spacing) {
+                        Button(Self.outputPlaceholder) {
+                            insertPromptPlaceholder(Self.outputPlaceholder)
+                        }
+                        .buttonStyle(.bordered)
+
+                        Button(Self.outputWithTimestampsPlaceholder) {
+                            insertPromptPlaceholder(Self.outputWithTimestampsPlaceholder)
+                        }
+                        .buttonStyle(.bordered)
+                    }
+                }
+            }
+        }
+        .groupBoxStyle(GlassGroupBoxStyle())
     }
 
     private func loadProviders() {
@@ -207,6 +255,20 @@ struct AddActionView: View {
             customProviderName = provider.displayName
             customBaseURL = provider.baseURL
         }
+
+        saveToFileEnabled = action.saveToFileEnabled
+        saveToFileMode = action.fileSaveMode
+        saveToFileDirectoryPath = ""
+        saveToFileExistingFilePath = ""
+        let storedPath = action.saveToFilePath ?? ""
+        if action.fileSaveMode == .newFile {
+            saveToFileDirectoryPath = storedPath
+        } else {
+            saveToFileExistingFilePath = storedPath
+        }
+        saveToFileTemplate = action.saveToFileTemplate ?? Self.defaultFileTemplate
+        saveToFileSeparator = action.saveToFileSeparator ?? Self.defaultSeparator
+        saveToFileExtension = action.saveToFileExtension ?? Self.defaultExtension
     }
 
     private func ensureInitialProviderSelection() {
@@ -337,17 +399,31 @@ struct AddActionView: View {
             )
         }
 
+        let resolvedSavePath = resolvedSaveToFilePath()
+
         if let action = actionToEdit {
             action.name = cleanName
             action.prompt = cleanPrompt
             action.providerID = providerID
             action.modelID = cleanModel
+            action.saveToFileEnabled = saveToFileEnabled
+            action.saveToFileMode = saveToFileMode.rawValue
+            action.saveToFilePath = resolvedSavePath
+            action.saveToFileTemplate = saveToFileTemplate
+            action.saveToFileSeparator = saveToFileSeparator
+            action.saveToFileExtension = saveToFileExtension
         } else {
             let action = PostProcessingAction(
                 name: cleanName,
                 prompt: cleanPrompt,
                 providerID: providerID,
-                modelID: cleanModel
+                modelID: cleanModel,
+                saveToFileEnabled: saveToFileEnabled,
+                saveToFileMode: saveToFileMode.rawValue,
+                saveToFilePath: resolvedSavePath,
+                saveToFileTemplate: saveToFileTemplate,
+                saveToFileSeparator: saveToFileSeparator,
+                saveToFileExtension: saveToFileExtension
             )
             modelContext.insert(action)
         }
@@ -368,6 +444,46 @@ struct AddActionView: View {
         }
 
         promptText += "\n\(placeholder)"
+    }
+
+    private func chooseDirectory() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.canCreateDirectories = true
+        panel.prompt = "Select Directory"
+
+        if panel.runModal() == .OK, let url = panel.url {
+            saveToFileDirectoryPath = url.path
+        }
+    }
+
+    private func chooseExistingFile() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        panel.allowedContentTypes = [.plainText, .text]
+        panel.prompt = "Select File"
+
+        if panel.runModal() == .OK, let url = panel.url {
+            saveToFileExistingFilePath = url.path
+        }
+    }
+
+    private func resolvedSaveToFilePath() -> String? {
+        let rawPath = saveToFileMode == .newFile ? saveToFileDirectoryPath : saveToFileExistingFilePath
+        let trimmed = rawPath.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    private func abbreviatePath(_ path: String) -> String {
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        if path.hasPrefix(home) {
+            return "~" + path.dropFirst(home.count)
+        }
+        return path
     }
 }
 
