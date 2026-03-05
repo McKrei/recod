@@ -24,7 +24,9 @@ actor LLMService {
     ) async throws -> String {
         let normalizedPrompt = systemPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
         let finalPrompt = normalizedPrompt.isEmpty ? "Transcript:\n${output}" : normalizedPrompt
-        let userText = finalPrompt.replacingOccurrences(of: "${output}", with: text)
+        let userText = finalPrompt
+            .replacingOccurrences(of: "${output_with_timestamps}", with: text)
+            .replacingOccurrences(of: "${output}", with: text)
 
         let message = try await complete(
             messages: [

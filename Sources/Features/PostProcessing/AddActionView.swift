@@ -27,6 +27,9 @@ struct AddActionView: View {
     ${output}
     """
 
+    private static let outputPlaceholder = "${output}"
+    private static let outputWithTimestampsPlaceholder = "${output_with_timestamps}"
+
     private var isEditing: Bool { actionToEdit != nil }
 
     private var selectedProvider: LLMProvider? {
@@ -116,6 +119,24 @@ struct AddActionView: View {
                             RoundedRectangle(cornerRadius: AppTheme.smallCornerRadius)
                                 .stroke(Color.white.opacity(0.15), lineWidth: 1)
                         )
+
+                    VStack(alignment: .leading, spacing: AppTheme.spacing) {
+                        Text("Quick placeholders")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+
+                        HStack(spacing: AppTheme.spacing) {
+                            Button(Self.outputPlaceholder) {
+                                insertPromptPlaceholder(Self.outputPlaceholder)
+                            }
+                            .buttonStyle(.bordered)
+
+                            Button(Self.outputWithTimestampsPlaceholder) {
+                                insertPromptPlaceholder(Self.outputWithTimestampsPlaceholder)
+                            }
+                            .buttonStyle(.bordered)
+                        }
+                    }
                 }
             }
             .groupBoxStyle(GlassGroupBoxStyle())
@@ -332,6 +353,21 @@ struct AddActionView: View {
         }
 
         dismiss()
+    }
+
+    private func insertPromptPlaceholder(_ placeholder: String) {
+        let trimmed = promptText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            promptText = placeholder
+            return
+        }
+
+        if promptText.hasSuffix("\n") {
+            promptText += placeholder
+            return
+        }
+
+        promptText += "\n\(placeholder)"
     }
 }
 

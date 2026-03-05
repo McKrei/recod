@@ -14,7 +14,7 @@ Current behavior:
 ### `PostProcessingAction` (SwiftData `@Model`)
 Stored in local database and configurable in Settings:
 - `name`
-- `prompt` (supports `${output}` placeholder)
+- `prompt` (supports `${output}` and `${output_with_timestamps}` placeholders)
 - `providerID`
 - `modelID`
 - `isAutoEnabled` (single-active invariant)
@@ -60,6 +60,17 @@ Stored in `Recording.postProcessedResults` as external storage:
 Transcript:
 ${output}
 ```
+
+Available prompt placeholders:
+- `${output}` - plain transcription text.
+- `${output_with_timestamps}` - transcription with per-segment time labels, one line per segment:
+
+```text
+[0:05] First phrase
+[0:12] Next phrase
+```
+
+If segment timeline is unavailable, `${output_with_timestamps}` falls back to plain transcription text.
 
 ### History
 - Completed rows with non-empty transcription and existing actions show inline manual run menu.
