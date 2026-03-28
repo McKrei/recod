@@ -18,22 +18,24 @@ actor LLMService {
 
     func postProcess(
         text: String,
+        userPromptTemplate: String = PostProcessingPromptDefaults.userPrompt,
         systemPrompt: String,
         providerID: String,
-        modelID: String
+        modelID: String,
+        timestampedText: String? = nil
     ) async throws -> String {
-        let normalizedPrompt = systemPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
-        let userText = PostProcessingPromptDefaults.userPrompt
-            .replacingOccurrences(of: "${output_with_timestamps}", with: text)
-            .replacingOccurrences(of: "${output}", with: text)
-
-        let finalSystemPrompt = normalizedPrompt.isEmpty
+        let resolvedSystemPrompt = systemPrompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             ? PostProcessingPromptDefaults.systemPrompt
-            : normalizedPrompt
+            : systemPrompt
+        let userText = PostProcessingPromptBuilder.buildUserPrompt(
+            prompt: userPromptTemplate,
+            sourceText: text,
+            timestampedText: timestampedText
+        )
 
         let message = try await complete(
             messages: [
-                LLMMessage(role: .system, content: finalSystemPrompt),
+                LLMMessage(role: .system, content: resolvedSystemPrompt),
                 LLMMessage(role: .user, content: userText)
             ],
             providerID: providerID,

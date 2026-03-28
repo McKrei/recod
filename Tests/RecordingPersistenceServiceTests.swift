@@ -3,15 +3,18 @@ import SwiftData
 import Testing
 @testable import Recod
 
-@Suite("RecordingPersistenceService")
+@Suite("RecordingPersistenceService", .serialized)
 @MainActor
 struct RecordingPersistenceServiceTests {
-    private let service = RecordingPersistenceService.shared
+    private struct TestStore {
+        let container: ModelContainer
+        let context: ModelContext
+    }
 
-    private func makeContext() throws -> ModelContext {
+    private func makeStore() throws -> TestStore {
         let config = ModelConfiguration(isStoredInMemoryOnly: true)
         let container = try ModelContainer(for: Recording.self, configurations: config)
-        return container.mainContext
+        return TestStore(container: container, context: container.mainContext)
     }
 
     private func makeTempAudioURL(named name: String) throws -> URL {
@@ -22,7 +25,9 @@ struct RecordingPersistenceServiceTests {
 
     @Test("createStreamingRecording persists draft metadata")
     func createStreamingRecordingPersistsDraftMetadata() throws {
-        let context = try makeContext()
+        let service = RecordingPersistenceService.shared
+        let store = try makeStore()
+        let context = store.context
         let url = URL(fileURLWithPath: "/tmp/streaming-test.wav")
 
         let recording = try service.createStreamingRecording(
@@ -41,7 +46,9 @@ struct RecordingPersistenceServiceTests {
 
     @Test("resolveRecordingForFinalization reuses matching draft recording")
     func resolveRecordingForFinalizationReusesDraft() throws {
-        let context = try makeContext()
+        let service = RecordingPersistenceService.shared
+        let store = try makeStore()
+        let context = store.context
         let draft = Recording(
             duration: 0,
             transcriptionStatus: .streamingTranscription,
@@ -65,7 +72,9 @@ struct RecordingPersistenceServiceTests {
 
     @Test("prepareForRetranscription clears previous output and queues recording")
     func prepareForRetranscriptionClearsPreviousOutput() throws {
-        let context = try makeContext()
+        let service = RecordingPersistenceService.shared
+        let store = try makeStore()
+        let context = store.context
         let recording = Recording(
             duration: 10,
             transcription: "ready",
@@ -90,7 +99,9 @@ struct RecordingPersistenceServiceTests {
 
     @Test("resolveRecordingForFinalization creates new recording when draft missing")
     func resolveRecordingForFinalizationCreatesNewRecording() throws {
-        let context = try makeContext()
+        let service = RecordingPersistenceService.shared
+        let store = try makeStore()
+        let context = store.context
         let url = try makeTempAudioURL(named: "new-recording.wav")
         defer { try? FileManager.default.removeItem(at: url) }
 

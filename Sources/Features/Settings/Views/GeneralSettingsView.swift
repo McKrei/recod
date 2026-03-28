@@ -266,20 +266,12 @@ struct GeneralSettingsView: View {
     
     @MainActor
     private func exportData() {
-        let panel = NSSavePanel()
-        panel.allowedContentTypes = [.json]
-        panel.nameFieldStringValue = "Recod_Backup_\(Date().formatted(.iso8601.year().month().day())).json"
-        panel.title = "Export Data"
-        panel.prompt = "Export"
-        
-        // Ensure app can present modal panels over other apps
-        NSApp.activate(ignoringOtherApps: true)
-        
-        // Show panel synchronously. In SwiftUI menu bar apps, this is sometimes required 
-        // to prevent the panel from silently failing to appear in the background.
-        let response = panel.runModal()
-        
-        if response == .OK, let url = panel.url {
+        let suggestedFileName = "Recod_Backup_\(Date().formatted(.iso8601.year().month().day())).json"
+        if let url = FilePanelService.chooseJSONSaveURL(
+            suggestedFileName: suggestedFileName,
+            title: "Export Data",
+            prompt: "Export"
+        ) {
             do {
                 let data = try DataBackupService.shared.exportData(context: modelContext)
                 try data.write(to: url)
@@ -292,19 +284,7 @@ struct GeneralSettingsView: View {
 
     @MainActor
     private func importData() {
-        let panel = NSOpenPanel()
-        panel.allowedContentTypes = [.json]
-        panel.allowsMultipleSelection = false
-        panel.canChooseDirectories = false
-        panel.title = "Import Data"
-        panel.prompt = "Import"
-        
-        // Ensure app can present modal panels over other apps
-        NSApp.activate(ignoringOtherApps: true)
-        
-        let response = panel.runModal()
-        
-        if response == .OK, let url = panel.url {
+        if let url = FilePanelService.chooseJSONOpenURL(title: "Import Data", prompt: "Import") {
             do {
                 let data = try Data(contentsOf: url)
                 let summary = try DataBackupService.shared.importData(from: data, context: modelContext)

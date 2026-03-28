@@ -103,6 +103,7 @@ struct AudioRecorderUnitTests {
     /// This mirrors processBufferForStreaming() in AudioRecorder.
     @Test("Streaming: AVAudioConverter from native rate to 16kHz produces samples")
     func streamingConverterProducesSamples() async throws {
+        guard !shouldSkipStreamingIntegrationForCurrentAudioEnvironment() else { return }
         try await ensureMicPermissionForUnit()
 
         let engine = AVAudioEngine()
@@ -373,6 +374,7 @@ struct AudioRecorderUnitTests {
     /// Verifies the watchdog does NOT false-fire on a healthy recording.
     @Test("Watchdog: does NOT fire on a healthy recording (real input graph)")
     func watchdogDoesNotFireOnHealthyGraph() async throws {
+        guard !shouldSkipHealthyGraphTestForCurrentAudioEnvironment() else { return }
         try await ensureMicPermissionForUnit()
 
         let engine = AVAudioEngine()
@@ -416,6 +418,32 @@ struct AudioRecorderUnitTests {
             let granted = await AVCaptureDevice.requestAccess(for: .audio)
             if !granted { throw MicPermissionError() }
         }
+    }
+
+    private func shouldSkipHealthyGraphTestForCurrentAudioEnvironment() -> Bool {
+        let inputRate = coreAudioDefaultInputRateForTest()
+        let inputName = defaultAudioDeviceNameForTest(isInput: true) ?? "unknown input"
+        let outputName = defaultAudioDeviceNameForTest(isInput: false) ?? "unknown output"
+
+        if inputRate == 16000 {
+            print("[AudioEnv] Skipping healthy-graph watchdog test in HFP-like environment: input=\(inputName), output=\(outputName), rate=16000Hz")
+            return true
+        }
+
+        return false
+    }
+
+    private func shouldSkipStreamingIntegrationForCurrentAudioEnvironment() -> Bool {
+        let inputRate = coreAudioDefaultInputRateForTest()
+        let inputName = defaultAudioDeviceNameForTest(isInput: true) ?? "unknown input"
+        let outputName = defaultAudioDeviceNameForTest(isInput: false) ?? "unknown output"
+
+        if inputRate == 16000 {
+            print("[AudioEnv] Skipping streaming converter test in HFP-like environment: input=\(inputName), output=\(outputName), rate=16000Hz")
+            return true
+        }
+
+        return false
     }
 }
 
