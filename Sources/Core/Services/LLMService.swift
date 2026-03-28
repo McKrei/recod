@@ -23,14 +23,17 @@ actor LLMService {
         modelID: String
     ) async throws -> String {
         let normalizedPrompt = systemPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
-        let finalPrompt = normalizedPrompt.isEmpty ? "Transcript:\n${output}" : normalizedPrompt
-        let userText = finalPrompt
+        let userText = PostProcessingPromptDefaults.userPrompt
             .replacingOccurrences(of: "${output_with_timestamps}", with: text)
             .replacingOccurrences(of: "${output}", with: text)
 
+        let finalSystemPrompt = normalizedPrompt.isEmpty
+            ? PostProcessingPromptDefaults.systemPrompt
+            : normalizedPrompt
+
         let message = try await complete(
             messages: [
-                LLMMessage(role: .system, content: "You are a text post-processor. Return only final transformed text."),
+                LLMMessage(role: .system, content: finalSystemPrompt),
                 LLMMessage(role: .user, content: userText)
             ],
             providerID: providerID,

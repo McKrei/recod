@@ -6,13 +6,16 @@ import UniformTypeIdentifiers
 struct AddActionView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var appState: AppState
 
     let actionToEdit: PostProcessingAction?
 
     @State private var actionName = "New Action"
-    @State private var promptText = Self.defaultPrompt
+    @State private var promptText = PostProcessingPromptDefaults.userPrompt
+    @State private var systemPromptText = ""
     @State private var modelID = ""
     @State private var selectedProviderID = ""
+    @State private var showingSystemPromptSheet = false
 
     @State private var providerAPIKey = ""
     @State private var customProviderName = ""
@@ -33,11 +36,6 @@ struct AddActionView: View {
     @State private var saveToFileSeparator = PostProcessingAction.defaultSaveToFileSeparator
     @State private var saveToFileExtension = PostProcessingAction.defaultSaveToFileExtension
 
-    private static let defaultPrompt = """
-    Transcript:
-    ${output}
-    """
-
     private static let outputPlaceholder = "${output}"
     private static let outputWithTimestampsPlaceholder = "${output_with_timestamps}"
     private static let defaultFileTemplate = PostProcessingAction.defaultSaveToFileTemplate
@@ -55,6 +53,22 @@ struct AddActionView: View {
         !actionName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             && !modelID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             && selectedProvider != nil
+    }
+
+    private var trimmedSystemPromptText: String {
+        systemPromptText.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var usesDefaultSystemPrompt: Bool {
+        trimmedSystemPromptText.isEmpty
+    }
+
+    private var systemPromptSummary: String {
+        if usesDefaultSystemPrompt {
+            return "Using the global default system prompt."
+        }
+
+        return trimmedSystemPromptText
     }
 
     var body: some View {
@@ -103,6 +117,21 @@ struct AddActionView: View {
         }
         .onChange(of: providerAPIKey) { _, _ in
             refreshModelsDebounced()
+        }
+        .sheet(isPresented: $showingSystemPromptSheet) {
+            SystemPromptEditorSheet(
+                title: "Action System Prompt",
+                subtitle: "Override the global default for this action only. Leave it empty to inherit the shared prompt.",
+                placeholder: appState.defaultPostProcessingSystemPrompt,
+                resetButtonTitle: "Use Global Default",
+                initialText: systemPromptText,
+                onReset: {
+                    systemPromptText = ""
+                },
+                onSave: { value in
+                    systemPromptText = value
+                }
+            )
         }
     }
 
@@ -224,6 +253,28 @@ struct AddActionView: View {
                         }
                         .buttonStyle(.bordered)
                     }
+
+                    Divider()
+
+                    HStack(alignment: .top, spacing: AppTheme.spacing) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("System Prompt")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.secondary)
+
+                            Text(systemPromptSummary)
+                                .font(.caption)
+                                .foregroundStyle(usesDefaultSystemPrompt ? .tertiary : .secondary)
+                                .lineLimit(2)
+                        }
+
+                        Spacer(minLength: AppTheme.spacing)
+
+                        Button(usesDefaultSystemPrompt ? "Set Custom Prompt" : "Edit Custom Prompt") {
+                            showingSystemPromptSheet = true
+                        }
+                        .buttonStyle(.bordered)
+                    }
                 }
             }
         }
@@ -246,7 +297,8 @@ struct AddActionView: View {
         guard let action = actionToEdit else { return }
 
         actionName = action.name
-        promptText = action.prompt.isEmpty ? Self.defaultPrompt : action.prompt
+        promptText = action.prompt.isEmpty ? PostProcessingPromptDefaults.userPrompt : action.prompt
+        systemPromptText = action.trimmedSystemPrompt ?? ""
         modelID = action.modelID
         selectedProviderID = action.providerID
         providerAPIKey = KeychainService.loadAPIKey(forProviderID: action.providerID) ?? ""
@@ -366,6 +418,7 @@ struct AddActionView: View {
 
         let cleanName = actionName.trimmingCharacters(in: .whitespacesAndNewlines)
         let cleanPrompt = promptText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let cleanSystemPrompt = trimmedSystemPromptText
         let cleanModel = modelID.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !cleanName.isEmpty, !cleanModel.isEmpty else { return }
 
@@ -404,6 +457,7 @@ struct AddActionView: View {
         if let action = actionToEdit {
             action.name = cleanName
             action.prompt = cleanPrompt
+            action.systemPrompt = cleanSystemPrompt.isEmpty ? nil : cleanSystemPrompt
             action.providerID = providerID
             action.modelID = cleanModel
             action.saveToFileEnabled = saveToFileEnabled
@@ -416,6 +470,7 @@ struct AddActionView: View {
             let action = PostProcessingAction(
                 name: cleanName,
                 prompt: cleanPrompt,
+                systemPrompt: cleanSystemPrompt.isEmpty ? nil : cleanSystemPrompt,
                 providerID: providerID,
                 modelID: cleanModel,
                 saveToFileEnabled: saveToFileEnabled,
@@ -489,5 +544,6 @@ struct AddActionView: View {
 
 #Preview {
     AddActionView(actionToEdit: nil)
+        .environmentObject(AppState())
         .modelContainer(for: PostProcessingAction.self, inMemory: true)
 }

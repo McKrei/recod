@@ -8,6 +8,7 @@ import Foundation
 struct DataBackupServiceTests {
 
     private let customProvidersDefaultsKey = "llmCustomProviders"
+    private let defaultPostProcessingSystemPromptKey = "defaultPostProcessingSystemPrompt"
 
     private func makeContainer() throws -> ModelContainer {
         let config = ModelConfiguration(isStoredInMemoryOnly: true)
@@ -17,11 +18,19 @@ struct DataBackupServiceTests {
     private func resetCustomProvidersStorage() {
         UserDefaults.standard.removeObject(forKey: customProvidersDefaultsKey)
     }
+
+    private func resetDefaultPostProcessingSystemPrompt() {
+        UserDefaults.standard.removeObject(forKey: defaultPostProcessingSystemPromptKey)
+    }
     
     @Test("Export correctly maps models to DTOs and handles formatting")
     func testExportData() throws {
         resetCustomProvidersStorage()
-        defer { resetCustomProvidersStorage() }
+        resetDefaultPostProcessingSystemPrompt()
+        defer {
+            resetCustomProvidersStorage()
+            resetDefaultPostProcessingSystemPrompt()
+        }
 
         let container = try makeContainer()
         let context = container.mainContext
@@ -29,7 +38,14 @@ struct DataBackupServiceTests {
         let r1 = Recording(id: UUID(), createdAt: Date(), duration: 10, transcription: "Text 1", filename: "f1.m4a")
         let r2 = Recording(id: UUID(), createdAt: Date(), duration: 20, transcription: "", filename: "f2.m4a") // Should be skipped (empty)
         let rule = ReplacementRule(id: UUID(), textToReplace: "foo", replacementText: "bar", createdAt: Date(), weight: 1.5, useFuzzyMatching: true)
-        let action = PostProcessingAction(name: "Fix", prompt: "Transcript:\n${output}", providerID: "openai", modelID: "gpt-4o-mini", isAutoEnabled: true)
+        let action = PostProcessingAction(
+            name: "Fix",
+            prompt: "Transcript:\n${output}",
+            systemPrompt: "Rewrite lightly and keep formatting.",
+            providerID: "openai",
+            modelID: "gpt-4o-mini",
+            isAutoEnabled: true
+        )
 
         let postResult = PostProcessedResult(
             actionID: action.id,
@@ -61,7 +77,7 @@ struct DataBackupServiceTests {
         decoder.dateDecodingStrategy = .iso8601
         let payload = try decoder.decode(BackupPayload.self, from: data)
         
-        #expect(payload.version == 2)
+        #expect(payload.version == 3)
         #expect(payload.recordings.count == 1)
         #expect(payload.recordings.first?.id == r1.id)
         #expect(payload.recordings.first?.transcription == "Text 1")
@@ -74,6 +90,8 @@ struct DataBackupServiceTests {
         #expect(payload.postProcessingActions?.count == 1)
         #expect(payload.postProcessingActions?.first?.name == "Fix")
         #expect(payload.postProcessingActions?.first?.isAutoEnabled == true)
+        #expect(payload.postProcessingActions?.first?.systemPrompt == "Rewrite lightly and keep formatting.")
+        #expect(payload.defaultPostProcessingSystemPrompt == PostProcessingPromptDefaults.systemPrompt)
 
         #expect(payload.customProviders?.isEmpty == false)
     }
@@ -81,7 +99,11 @@ struct DataBackupServiceTests {
     @Test("Import prevents duplicates based on UUID and content logic")
     func testImportPreventsDuplicates() throws {
         resetCustomProvidersStorage()
-        defer { resetCustomProvidersStorage() }
+        resetDefaultPostProcessingSystemPrompt()
+        defer {
+            resetCustomProvidersStorage()
+            resetDefaultPostProcessingSystemPrompt()
+        }
 
         let container = try makeContainer()
         let context = container.mainContext
@@ -115,12 +137,13 @@ struct DataBackupServiceTests {
         let newRuleDTO = ReplacementRuleDTO(id: UUID(), textToReplace: "baz", additionalIncorrectForms: [], replacementText: "qux", createdAt: baseDate, weight: 1.5, useFuzzyMatching: true)
         
         let payload = BackupPayload(
-            version: 2,
+            version: 3,
             exportDate: Date(),
             recordings: [dupRecDTO, contentDupRecDTO, newRecDTO],
             rules: [dupRuleDTO, contentDupRuleDTO, newRuleDTO],
             postProcessingActions: nil,
-            customProviders: nil
+            customProviders: nil,
+            defaultPostProcessingSystemPrompt: nil
         )
         
         let encoder = JSONEncoder()
@@ -149,7 +172,11 @@ struct DataBackupServiceTests {
     @Test("Import includes actions/providers, keeps single auto-enabled action")
     func testImportActionsProvidersAndSingleAutoRule() throws {
         resetCustomProvidersStorage()
-        defer { resetCustomProvidersStorage() }
+        resetDefaultPostProcessingSystemPrompt()
+        defer {
+            resetCustomProvidersStorage()
+            resetDefaultPostProcessingSystemPrompt()
+        }
 
         let container = try makeContainer()
         let context = container.mainContext
@@ -171,6 +198,7 @@ struct DataBackupServiceTests {
                 id: UUID(),
                 name: "Imported Auto",
                 prompt: "Transcript:\n${output}",
+                systemPrompt: "Use imported override.",
                 providerID: "provider-imported",
                 modelID: "model-1",
                 isAutoEnabled: true,
@@ -182,6 +210,7 @@ struct DataBackupServiceTests {
                 id: UUID(),
                 name: "Imported Manual",
                 prompt: "Transcript:\n${output}",
+                systemPrompt: nil,
                 providerID: "provider-imported",
                 modelID: "model-2",
                 isAutoEnabled: false,
@@ -202,12 +231,13 @@ struct DataBackupServiceTests {
         ]
 
         let payload = BackupPayload(
-            version: 2,
+            version: 3,
             exportDate: Date(),
             recordings: [],
             rules: [],
             postProcessingActions: importedActions,
-            customProviders: providers
+            customProviders: providers,
+            defaultPostProcessingSystemPrompt: "Global imported prompt"
         )
 
         let encoder = JSONEncoder()
@@ -226,6 +256,8 @@ struct DataBackupServiceTests {
 
         #expect(allActions.contains(where: { $0.name == "Existing Auto" && $0.isAutoEnabled }))
         #expect(allActions.contains(where: { $0.name == "Imported Auto" && $0.isAutoEnabled == false }))
+        #expect(allActions.contains(where: { $0.name == "Imported Auto" && $0.systemPrompt == "Use imported override." }))
+        #expect(AppState.shared.defaultPostProcessingSystemPrompt == "Global imported prompt")
 
         let importedProviders = LLMProviderStore.loadCustomProviders()
         #expect(importedProviders.contains(where: { $0.id == "provider-imported" }))

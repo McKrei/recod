@@ -10,6 +10,7 @@ struct BackupPayload: Codable {
     let rules: [ReplacementRuleDTO]
     let postProcessingActions: [PostProcessingActionDTO]?
     let customProviders: [LLMProvider]?
+    let defaultPostProcessingSystemPrompt: String?
 }
 
 struct RecordingDTO: Codable {
@@ -35,6 +36,7 @@ struct PostProcessingActionDTO: Codable {
     let id: UUID
     let name: String
     let prompt: String
+    let systemPrompt: String?
     let providerID: String
     let modelID: String
     let isAutoEnabled: Bool
@@ -52,6 +54,7 @@ struct PostProcessingActionDTO: Codable {
         id: UUID,
         name: String,
         prompt: String,
+        systemPrompt: String? = nil,
         providerID: String,
         modelID: String,
         isAutoEnabled: Bool,
@@ -68,6 +71,7 @@ struct PostProcessingActionDTO: Codable {
         self.id = id
         self.name = name
         self.prompt = prompt
+        self.systemPrompt = systemPrompt
         self.providerID = providerID
         self.modelID = modelID
         self.isAutoEnabled = isAutoEnabled
@@ -115,12 +119,13 @@ final class DataBackupService {
         let actionDTOs = allActions.map(actionToDTO)
         
         let payload = BackupPayload(
-            version: 2,
+            version: 3,
             exportDate: Date(),
             recordings: recordingDTOs,
             rules: ruleDTOs,
             postProcessingActions: actionDTOs,
-            customProviders: LLMProviderStore.loadCustomProviders()
+            customProviders: LLMProviderStore.loadCustomProviders(),
+            defaultPostProcessingSystemPrompt: AppState.shared.defaultPostProcessingSystemPrompt
         )
         
         let encoder = JSONEncoder()
@@ -169,6 +174,11 @@ final class DataBackupService {
 
         if let importedProviders = payload.customProviders, !importedProviders.isEmpty {
             summary.customProvidersImported = LLMProviderStore.mergeImportedCustomProviders(importedProviders)
+        }
+
+        if let importedDefaultPrompt = payload.defaultPostProcessingSystemPrompt,
+           !importedDefaultPrompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            AppState.shared.defaultPostProcessingSystemPrompt = importedDefaultPrompt
         }
 
         if let actionDTOs = payload.postProcessingActions {
@@ -230,6 +240,7 @@ final class DataBackupService {
             id: action.id,
             name: action.name,
             prompt: action.prompt,
+            systemPrompt: action.trimmedSystemPrompt,
             providerID: action.providerID,
             modelID: action.modelID,
             isAutoEnabled: action.isAutoEnabled,
@@ -311,6 +322,7 @@ final class DataBackupService {
             id: dto.id,
             name: dto.name,
             prompt: dto.prompt,
+            systemPrompt: dto.systemPrompt,
             providerID: dto.providerID,
             modelID: dto.modelID,
             isAutoEnabled: isAutoEnabled,

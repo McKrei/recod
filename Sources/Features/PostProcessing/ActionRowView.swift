@@ -27,6 +27,13 @@ struct ActionRowView: View {
                             .help("Saves response to file")
                     }
 
+                    if action.hasCustomSystemPrompt {
+                        Image(systemName: "text.bubble")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .help("Uses a custom system prompt")
+                    }
+
                     Text(providerTitle)
                         .font(.caption)
                         .foregroundStyle(.secondary)

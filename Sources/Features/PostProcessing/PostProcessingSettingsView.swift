@@ -3,10 +3,12 @@ import SwiftData
 
 struct PostProcessingSettingsView: View {
     @Environment(\.modelContext) private var modelContext
+    @EnvironmentObject private var appState: AppState
     @Query(sort: \PostProcessingAction.createdAt, order: .reverse) private var actions: [PostProcessingAction]
 
     @State private var showingAddSheet = false
     @State private var actionToEdit: PostProcessingAction?
+    @State private var showingDefaultSystemPromptSheet = false
 
     var body: some View {
         ScrollView {
@@ -16,12 +18,22 @@ struct PostProcessingSettingsView: View {
                     subtitle: "Run AI prompts on finished transcripts using OpenAI-compatible providers.",
                     systemImage: "wand.and.stars"
                 ) {
-                    Button(action: { showingAddSheet = true }) {
-                        Label("Add Action", systemImage: "plus")
+                    HStack(spacing: AppTheme.spacing) {
+                        Button(action: { showingDefaultSystemPromptSheet = true }) {
+                            Label("Default System Prompt", systemImage: "text.bubble")
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.regular)
+
+                        Button(action: { showingAddSheet = true }) {
+                            Label("Add Action", systemImage: "plus")
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.regular)
                     }
-                    .buttonStyle(.bordered)
-                    .controlSize(.regular)
                 }
+
+                defaultSystemPromptSection
 
                 if actions.isEmpty {
                     ContentUnavailableView(
@@ -68,10 +80,51 @@ struct PostProcessingSettingsView: View {
         .sheet(item: $actionToEdit) { action in
             AddActionView(actionToEdit: action)
         }
+        .sheet(isPresented: $showingDefaultSystemPromptSheet) {
+            SystemPromptEditorSheet(
+                title: "Default System Prompt",
+                subtitle: "This prompt is used by every post-processing action unless an action defines its own override.",
+                placeholder: PostProcessingPromptDefaults.systemPrompt,
+                resetButtonTitle: "Restore Built-In",
+                initialText: appState.defaultPostProcessingSystemPrompt,
+                onReset: {
+                    appState.defaultPostProcessingSystemPrompt = PostProcessingPromptDefaults.systemPrompt
+                },
+                onSave: { value in
+                    appState.defaultPostProcessingSystemPrompt = value
+                }
+            )
+        }
+    }
+
+    private var defaultSystemPromptSection: some View {
+        GroupBox {
+            HStack(alignment: .top, spacing: AppTheme.spacing) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Default System Prompt")
+                        .font(.headline)
+
+                    Text(appState.defaultPostProcessingSystemPrompt)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(3)
+                }
+
+                Spacer(minLength: AppTheme.spacing)
+
+                Button("Edit") {
+                    showingDefaultSystemPromptSheet = true
+                }
+                .buttonStyle(.bordered)
+            }
+            .padding(8)
+        }
+        .groupBoxStyle(GlassGroupBoxStyle())
     }
 }
 
 #Preview {
     PostProcessingSettingsView()
+        .environmentObject(AppState())
         .modelContainer(for: PostProcessingAction.self, inMemory: true)
 }

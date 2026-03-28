@@ -5,6 +5,8 @@ import SwiftData
 class AppState: ObservableObject {
     static let shared = AppState()
 
+    private let defaultPostProcessingSystemPromptKey = "defaultPostProcessingSystemPrompt"
+
     // Configuration
     public var saveToClipboard: Bool {
         get {
@@ -47,6 +49,26 @@ class AppState: ObservableObject {
         set {
             self.objectWillChange.send()
             UserDefaults.standard.set(newValue.rawValue, forKey: "selectedEngine")
+        }
+    }
+
+    public var defaultPostProcessingSystemPrompt: String {
+        get {
+            if let stored = UserDefaults.standard.string(forKey: defaultPostProcessingSystemPromptKey),
+               !stored.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                return stored
+            }
+
+            UserDefaults.standard.set(PostProcessingPromptDefaults.systemPrompt, forKey: defaultPostProcessingSystemPromptKey)
+            return PostProcessingPromptDefaults.systemPrompt
+        }
+        set {
+            let normalized = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
+            self.objectWillChange.send()
+            UserDefaults.standard.set(
+                normalized.isEmpty ? PostProcessingPromptDefaults.systemPrompt : normalized,
+                forKey: defaultPostProcessingSystemPromptKey
+            )
         }
     }
 

@@ -6,6 +6,7 @@ final class PostProcessingAction {
     @Attribute(.unique) var id: UUID
     var name: String
     var prompt: String
+    var systemPrompt: String?
     var providerID: String
     var modelID: String
     var isAutoEnabled: Bool
@@ -26,6 +27,7 @@ final class PostProcessingAction {
         id: UUID = UUID(),
         name: String,
         prompt: String,
+        systemPrompt: String? = nil,
         providerID: String,
         modelID: String,
         isAutoEnabled: Bool = false,
@@ -42,6 +44,7 @@ final class PostProcessingAction {
         self.id = id
         self.name = name
         self.prompt = prompt
+        self.systemPrompt = systemPrompt?.trimmingCharacters(in: .whitespacesAndNewlines)
         self.providerID = providerID
         self.modelID = modelID
         self.isAutoEnabled = isAutoEnabled
@@ -65,6 +68,16 @@ extension PostProcessingAction {
     var saveToFileEnabled: Bool {
         get { saveToFileEnabledRaw ?? false }
         set { saveToFileEnabledRaw = newValue }
+    }
+
+    var trimmedSystemPrompt: String? {
+        guard let systemPrompt else { return nil }
+        let trimmed = systemPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    var hasCustomSystemPrompt: Bool {
+        trimmedSystemPrompt != nil
     }
 
     var fileSaveMode: SaveToFileMode {
