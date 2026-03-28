@@ -7,22 +7,49 @@ struct GeneralSettingsView: View {
     @EnvironmentObject var appState: AppState
     @EnvironmentObject var launchAtLoginService: LaunchAtLoginService
     @State private var showScreenPermissionAlert = false
-    
-    // Backup State
+
     @State private var importSummary: ImportSummary?
     @State private var showImportAlert = false
     @State private var errorMessage: String?
     @State private var showErrorAlert = false
 
-    var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 24) {
-                storageSection
-                systemSection
-                shortcutsSection
-                backupSection
+    private var recordSystemAudioBinding: Binding<Bool> {
+        Binding(
+            get: { appState.recordSystemAudio },
+            set: { newValue in
+                if newValue && !CGPreflightScreenCaptureAccess() {
+                    CGRequestScreenCaptureAccess()
+                    showScreenPermissionAlert = true
+                }
+                appState.recordSystemAudio = newValue
             }
-            .padding(30)
+        )
+    }
+
+    private var saveToClipboardBinding: Binding<Bool> {
+        Binding(
+            get: { appState.saveToClipboard },
+            set: { appState.saveToClipboard = $0 }
+        )
+    }
+
+    private var escapeCancelsRecordingBinding: Binding<Bool> {
+        Binding(
+            get: { appState.escapeCancelsRecording },
+            set: { appState.escapeCancelsRecording = $0 }
+        )
+    }
+
+    var body: some View {
+        SettingsPageContainer(
+            title: "General Settings",
+            subtitle: "Manage storage, startup behavior, shortcuts, and data portability.",
+            systemImage: "gearshape"
+        ) {
+            storageSection
+            systemSection
+            shortcutsSection
+            backupSection
         }
         .alert("Screen Recording Permission Required", isPresented: $showScreenPermissionAlert) {
             Button("Open System Settings") {
@@ -42,11 +69,11 @@ struct GeneralSettingsView: View {
             if let summary = importSummary {
                 Text("""
                 Import completed successfully.
-                
+
                 Transcriptions:
                 - Imported: \(summary.recordingsImported)
                 - Skipped (Duplicates): \(summary.recordingsSkipped)
-                
+
                 Dictionary Rules:
                 - Imported: \(summary.rulesImported)
                 - Skipped (Duplicates): \(summary.rulesSkipped)
@@ -66,204 +93,120 @@ struct GeneralSettingsView: View {
             Text(errorMessage ?? "An unknown error occurred.")
         }
     }
-    
+
     // MARK: - Sections
-    
+
     private var storageSection: some View {
-        GroupBox {
-            VStack(alignment: .leading, spacing: 16) {
-                Label("Storage & Debugging", systemImage: "externaldrive")
-                    .font(.headline)
-                    .foregroundStyle(.primary)
-
-                Divider()
-
-                HStack {
-                    VStack(alignment: .leading) {
-                        Text("Recordings")
-                            .font(.body)
-                        Text("Manage your audio files")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    Spacer()
-                    Button("Reveal in Finder") {
-                        appState.revealRecordings()
-                    }
+        SettingsSectionCard(
+            title: "Storage & Debugging",
+            systemImage: "externaldrive"
+        ) {
+            SettingsActionRow(
+                title: "Recordings",
+                subtitle: "Manage your audio files"
+            ) {
+                Button("Reveal in Finder") {
+                    appState.revealRecordings()
                 }
-
-                HStack {
-                    VStack(alignment: .leading) {
-                        Text("Logs")
-                            .font(.body)
-                        Text("View application logs")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    Spacer()
-                    Button("Open Log File") {
-                        appState.revealLogs()
-                    }
-                }
+                .buttonStyle(.bordered)
             }
-            .padding(8)
+
+            Divider()
+
+            SettingsActionRow(
+                title: "Logs",
+                subtitle: "View application logs"
+            ) {
+                Button("Open Log File") {
+                    appState.revealLogs()
+                }
+                .buttonStyle(.bordered)
+            }
         }
-        .groupBoxStyle(GlassGroupBoxStyle())
     }
-    
+
     private var systemSection: some View {
-        GroupBox {
-            VStack(alignment: .leading, spacing: 16) {
-                Label("System", systemImage: "macwindow")
-                    .font(.headline)
-                    .foregroundStyle(.primary)
+        SettingsSectionCard(
+            title: "System",
+            systemImage: "macwindow"
+        ) {
+            SettingsToggleRow(
+                title: "Launch at Login",
+                subtitle: "Automatically start Recod when you log in",
+                isOn: $launchAtLoginService.isEnabled
+            )
 
-                Divider()
+            Divider()
 
-                HStack {
-                    VStack(alignment: .leading) {
-                        Text("Launch at Login")
-                            .font(.body)
-                        Text("Automatically start Recod when you log in")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    Spacer()
-                    StatusToggle(isOn: $launchAtLoginService.isEnabled)
-                }
+            SettingsToggleRow(
+                title: "Record System Audio",
+                subtitle: "Include computer sound (stereo split)",
+                isOn: recordSystemAudioBinding
+            )
 
-                Divider()
+            Divider()
 
-                HStack {
-                    VStack(alignment: .leading) {
-                        Text("Record System Audio")
-                            .font(.body)
-                        Text("Include computer sound (stereo split)")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    Spacer()
-                    StatusToggle(isOn: Binding(
-                        get: { appState.recordSystemAudio },
-                        set: { newValue in
-                            if newValue {
-                                // Check if screen capture permission is granted
-                                if !CGPreflightScreenCaptureAccess() {
-                                    // Request permission (opens System Settings)
-                                    CGRequestScreenCaptureAccess()
-                                    showScreenPermissionAlert = true
-                                }
-                            }
-                            appState.recordSystemAudio = newValue
-                        }
-                    ))
-                }
+            SettingsToggleRow(
+                title: "Save to Clipboard",
+                subtitle: "Keep transcription in clipboard after pasting",
+                isOn: saveToClipboardBinding
+            )
 
-                Divider()
+            Divider()
 
-                HStack {
-                    VStack(alignment: .leading) {
-                        Text("Save to Clipboard")
-                            .font(.body)
-                        Text("Keep transcription in clipboard after pasting")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    Spacer()
-                    StatusToggle(isOn: Binding(
-                        get: { appState.saveToClipboard },
-                        set: { appState.saveToClipboard = $0 }
-                    ))
-                }
-
-                Divider()
-
-                HStack {
-                    VStack(alignment: .leading) {
-                        Text("Escape Cancels Recording")
-                            .font(.body)
-                        Text("Press Esc to abort recording without saving or transcribing")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    Spacer()
-                    StatusToggle(isOn: Binding(
-                        get: { appState.escapeCancelsRecording },
-                        set: { appState.escapeCancelsRecording = $0 }
-                    ))
-                }
-            }
-            .padding(8)
+            SettingsToggleRow(
+                title: "Escape Cancels Recording",
+                subtitle: "Press Esc to abort recording without saving or transcribing",
+                isOn: escapeCancelsRecordingBinding
+            )
         }
-        .groupBoxStyle(GlassGroupBoxStyle())
     }
-    
+
     private var shortcutsSection: some View {
-        GroupBox {
-            VStack(alignment: .leading, spacing: 16) {
-                Label("Shortcuts", systemImage: "keyboard")
-                    .font(.headline)
-                    .foregroundStyle(.primary)
-
-                Divider()
-
-                HStack {
-                    Text("Toggle Recording")
-                    Spacer()
-                    HotKeyRecorderView()
-                }
+        SettingsSectionCard(
+            title: "Shortcuts",
+            systemImage: "keyboard"
+        ) {
+            SettingsActionRow(
+                title: "Toggle Recording",
+                subtitle: "Capture or stop audio with a global shortcut"
+            ) {
+                HotKeyRecorderView()
             }
-            .padding(8)
         }
-        .groupBoxStyle(GlassGroupBoxStyle())
     }
-    
+
     private var backupSection: some View {
-        GroupBox {
-            VStack(alignment: .leading, spacing: 16) {
-                Label("Data Backup", systemImage: "arrow.triangle.2.circlepath")
-                    .font(.headline)
-                    .foregroundStyle(.primary)
-
-                Divider()
-
-                HStack {
-                    VStack(alignment: .leading) {
-                        Text("Export Data")
-                            .font(.body)
-                        Text("Save transcriptions, post-processing results, dictionary, and actions (without API keys)")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    Spacer()
-                    Button("Export...") {
-                        exportData()
-                    }
+        SettingsSectionCard(
+            title: "Data Backup",
+            systemImage: "arrow.triangle.2.circlepath"
+        ) {
+            SettingsActionRow(
+                title: "Export Data",
+                subtitle: "Save transcriptions, post-processing results, dictionary, and actions (without API keys)"
+            ) {
+                Button("Export...") {
+                    exportData()
                 }
-
-                Divider()
-
-                HStack {
-                    VStack(alignment: .leading) {
-                        Text("Import Data")
-                            .font(.body)
-                        Text("Restore transcriptions, post-processing results, dictionary, and actions (without API keys)")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    Spacer()
-                    Button("Import...") {
-                        importData()
-                    }
-                }
+                .buttonStyle(.bordered)
             }
-            .padding(8)
+
+            Divider()
+
+            SettingsActionRow(
+                title: "Import Data",
+                subtitle: "Restore transcriptions, post-processing results, dictionary, and actions (without API keys)"
+            ) {
+                Button("Import...") {
+                    importData()
+                }
+                .buttonStyle(.bordered)
+            }
         }
-        .groupBoxStyle(GlassGroupBoxStyle())
     }
-    
+
     // MARK: - Backup Actions
-    
+
     @MainActor
     private func exportData() {
         let suggestedFileName = "Recod_Backup_\(Date().formatted(.iso8601.year().month().day())).json"

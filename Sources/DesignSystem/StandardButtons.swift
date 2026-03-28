@@ -12,12 +12,29 @@ import SwiftUI
 struct DeleteIconButton: View {
     let action: () -> Void
     @State private var isHovering = false
-    
+
     var body: some View {
         Button(role: .destructive, action: action) {
             Image(systemName: "trash")
                 .font(.system(size: 14))
                 .foregroundStyle(isHovering ? .red : .secondary)
+                .opacity(isHovering ? 1.0 : 0.7)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { isHovering = $0 }
+    }
+}
+
+struct EditIconButton: View {
+    let action: () -> Void
+    @State private var isHovering = false
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: "pencil")
+                .font(.system(size: 14))
+                .foregroundStyle(isHovering ? Color.accentColor : .secondary)
                 .opacity(isHovering ? 1.0 : 0.7)
                 .contentShape(Rectangle())
         }

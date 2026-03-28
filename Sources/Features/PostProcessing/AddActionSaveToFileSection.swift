@@ -17,7 +17,7 @@ struct AddActionSaveToFileSection: View {
     let abbreviatePath: (String) -> String
 
     var body: some View {
-        GroupBox {
+        SettingsSectionCard {
             VStack(alignment: .leading, spacing: AppTheme.spacing) {
                 HStack(spacing: AppTheme.spacing) {
                     Image(systemName: "doc.badge.arrow.up")
@@ -128,6 +128,5 @@ struct AddActionSaveToFileSection: View {
                 }
             }
         }
-        .groupBoxStyle(GlassGroupBoxStyle())
     }
 }

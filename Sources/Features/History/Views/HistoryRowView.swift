@@ -50,19 +50,6 @@ struct HistoryRowView: View {
         !postProcessingActions.isEmpty
     }
 
-    @ViewBuilder
-    private var postProcessingButtonLabel: some View {
-        if let actionName = latestPostProcessedResult?.actionName {
-            Text(String(actionName.prefix(3)))
-                .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                .foregroundStyle(.secondary)
-        } else {
-            Image(systemName: "wand.and.stars")
-                .font(.system(size: 11))
-                .foregroundStyle(.tertiary)
-        }
-    }
-
     var body: some View {
         HStack(alignment: .top, spacing: AppTheme.spacing) {
             if recording.transcriptionStatus != .streamingTranscription && !recording.isFileDeleted {
@@ -75,323 +62,39 @@ struct HistoryRowView: View {
             }
 
             VStack(alignment: .leading, spacing: 8) {
-                // Header: Date and Duration
-                HStack {
-                    Text(recording.createdAt.formatted(date: .abbreviated, time: .shortened))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                HistoryRowHeader(
+                    createdAt: recording.createdAt,
+                    durationText: formatDuration(recording.duration),
+                    canRunPostProcessing: canRunPostProcessing,
+                    postProcessingActions: postProcessingActions,
+                    latestActionName: latestPostProcessedResult?.actionName,
+                    onRunPostProcessing: onRunPostProcessing
+                )
 
-                    Spacer()
-
-                    if canRunPostProcessing {
-                        Menu {
-                            ForEach(postProcessingActions) { action in
-                                Button(action.name) {
-                                    onRunPostProcessing(action)
-                                }
-                            }
-                        } label: {
-                            postProcessingButtonLabel
-                                .frame(width: 28, height: 18)
-                                .background(Color.white.opacity(0.07))
-                                .clipShape(RoundedRectangle(cornerRadius: 4))
-                        }
-                        .menuStyle(.borderlessButton)
-                        .fixedSize()
-                        .help("Run post-processing")
-                    }
-
-                    Text(formatDuration(recording.duration))
-                        .font(.caption.monospacedDigit())
-                        .foregroundStyle(.tertiary)
-                }
-
-                // Transcription Content
-                VStack(alignment: .leading, spacing: 4) {
-                    switch transcriptionStatus {
-                    case .transcribing:
-                        VStack(alignment: .leading, spacing: 6) {
-                            HStack(spacing: 8) {
-                                ProgressView()
-                                    .controlSize(.small)
-                                Text("Transcribing...")
-                                    .foregroundStyle(.secondary)
-                            }
-
-                            if let text = textForCopy?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty {
-                                Text(text)
-                                    .foregroundStyle(.primary)
-                                    .lineLimit(isExpanded ? nil : 2)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                    .contentShape(Rectangle())
-                                    .onTapGesture {
-                                        withAnimation(.spring(duration: 0.3)) {
-                                            isExpanded.toggle()
-                                            if !isExpanded { isSegmentsExpanded = false }
-                                        }
-                                    }
-                            }
-                        }
-                    case .postProcessing:
-                        VStack(alignment: .leading, spacing: 6) {
-                            HStack(spacing: 8) {
-                                ProgressView()
-                                    .controlSize(.small)
-                                Text("Post-processing...")
-                                    .foregroundStyle(.secondary)
-                            }
-
-                            if let text = textForCopy?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty {
-                                Text(text)
-                                    .foregroundStyle(.primary)
-                                    .lineLimit(isExpanded ? nil : 2)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                    .contentShape(Rectangle())
-                                    .onTapGesture {
-                                        withAnimation(.spring(duration: 0.3)) {
-                                            isExpanded.toggle()
-                                            if !isExpanded { isSegmentsExpanded = false }
-                                        }
-                                    }
-                            }
-                        }
-                    case .streamingTranscription:
-                        VStack(alignment: .leading, spacing: 6) {
-                            HStack(spacing: 8) {
-                                Circle()
-                                    .fill(Color.red)
-                                    .frame(width: 8, height: 8)
-                                Text("Recording & Transcribing...")
-                                    .foregroundStyle(.red)
-                                    .font(.caption.bold())
-                            }
-                            if let liveText = recording.liveTranscription, !liveText.isEmpty {
-                                Text(liveText)
-                                    .foregroundStyle(.primary)
-                                    .lineLimit(isExpanded ? nil : 2)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                    .contentShape(Rectangle())
-                                    .onTapGesture {
-                                        withAnimation(.spring(duration: 0.3)) {
-                                            isExpanded.toggle()
-                                            if !isExpanded { isSegmentsExpanded = false }
-                                        }
-                                    }
-
-                                // "Show Transcription" Button (only if segments exist AND expanded)
-                                if isExpanded, let segments = recording.segments, !segments.isEmpty {
-                                    Button {
-                                        withAnimation(.spring(duration: 0.4)) {
-                                            isSegmentsExpanded.toggle()
-                                        }
-                                    } label: {
-                                        HStack(spacing: 4) {
-                                            Text(isSegmentsExpanded ? "Hide Transcription" : "Show Transcription")
-                                            Image(systemName: "chevron.down")
-                                                .rotationEffect(.degrees(isSegmentsExpanded ? 180 : 0))
-                                        }
-                                        .font(.caption.bold())
-                                        .foregroundStyle(Color.accentColor)
-                                    }
-                                    .buttonStyle(.plain)
-                                    .padding(.top, 2)
-
-                                    // Detailed Segments List
-                                    if isSegmentsExpanded {
-                                        TranscriptionDetailView(segments: segments)
-                                            .transition(.move(edge: .top).combined(with: .opacity))
-                                    }
-                                }
-                            } else {
-                                Text("Listening...")
-                                    .italic()
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-                    case .queued:
-                        HStack(spacing: 8) {
-                            Image(systemName: "clock.arrow.2.circlepath")
-                                .foregroundStyle(.secondary)
-                            Text("Queued for retranscription")
-                                .foregroundStyle(.secondary)
-
-                            Spacer()
-
-                            Button {
-                                RecordingOrchestrator.shared.cancelRetranscribe(recording: recording)
-                            } label: {
-                                Image(systemName: "xmark.circle.fill")
-                                    .foregroundStyle(.secondary)
-                            }
-                            .buttonStyle(.plain)
-                            .help("Cancel")
-                        }
-                    case .completed:
-                        if let transcription = recording.transcription, !transcription.isEmpty {
-                            VStack(alignment: .leading, spacing: 6) {
-                                if let postProcessedText = latestPostProcessedText {
-                                    VStack(alignment: .leading, spacing: 8) {
-                                        HStack(spacing: 6) {
-                                            Image(systemName: "wand.and.stars")
-                                                .foregroundStyle(.secondary)
-                                            Text("After Post-Processing")
-                                                .font(.caption.bold())
-                                                .foregroundStyle(.secondary)
-                                            if let actionName = latestPostProcessedResult?.actionName {
-                                                Text(actionName)
-                                                    .font(.caption)
-                                                    .foregroundStyle(.tertiary)
-                                            }
-                                        }
-
-                                        Text(postProcessedText)
-                                            .foregroundStyle(.primary)
-                                            .lineLimit(isExpanded ? nil : 2)
-                                            .frame(maxWidth: .infinity, alignment: .leading)
-                                            .contentShape(Rectangle())
-                                            .onTapGesture {
-                                                withAnimation(.spring(duration: 0.3)) {
-                                                    isExpanded.toggle()
-                                                    if !isExpanded {
-                                                        isSegmentsExpanded = false
-                                                    }
-                                                }
-                                            }
-
-                                        if isExpanded {
-                                            Divider()
-
-                                            Text("Before Post-Processing")
-                                                .font(.caption.bold())
-                                                .foregroundStyle(.secondary)
-
-                                            Text(transcription)
-                                                .foregroundStyle(.secondary)
-                                                .lineLimit(nil)
-                                                .frame(maxWidth: .infinity, alignment: .leading)
-
-                                            if let segments = recording.segments, !segments.isEmpty {
-                                                Button {
-                                                    withAnimation(.spring(duration: 0.4)) {
-                                                        isSegmentsExpanded.toggle()
-                                                    }
-                                                } label: {
-                                                    HStack(spacing: 4) {
-                                                        Text(isSegmentsExpanded ? "Hide Timeline" : "Show Timeline")
-                                                        Image(systemName: "chevron.down")
-                                                            .rotationEffect(.degrees(isSegmentsExpanded ? 180 : 0))
-                                                    }
-                                                    .font(.caption.bold())
-                                                    .foregroundStyle(Color.accentColor)
-                                                }
-                                                .buttonStyle(.plain)
-                                                .padding(.top, 2)
-
-                                                if isSegmentsExpanded {
-                                                    TranscriptionDetailView(segments: segments)
-                                                        .transition(.move(edge: .top).combined(with: .opacity))
-                                                }
-                                            }
-                                        }
-                                    }
-                                } else {
-                                    Text(transcription)
-                                        .foregroundStyle(.primary)
-                                        .lineLimit(isExpanded ? nil : 2)
-                                        .frame(maxWidth: .infinity, alignment: .leading)
-                                        .contentShape(Rectangle())
-                                        .onTapGesture {
-                                            withAnimation(.spring(duration: 0.3)) {
-                                                isExpanded.toggle()
-                                                if !isExpanded { isSegmentsExpanded = false }
-                                            }
-                                        }
-
-                                    if isExpanded, let segments = recording.segments, !segments.isEmpty {
-                                        Button {
-                                            withAnimation(.spring(duration: 0.4)) {
-                                                isSegmentsExpanded.toggle()
-                                            }
-                                        } label: {
-                                            HStack(spacing: 4) {
-                                                Text(isSegmentsExpanded ? "Hide Transcription" : "Show Transcription")
-                                                Image(systemName: "chevron.down")
-                                                    .rotationEffect(.degrees(isSegmentsExpanded ? 180 : 0))
-                                            }
-                                            .font(.caption.bold())
-                                            .foregroundStyle(Color.accentColor)
-                                        }
-                                        .buttonStyle(.plain)
-                                        .padding(.top, 2)
-
-                                        if isSegmentsExpanded {
-                                            TranscriptionDetailView(segments: segments)
-                                                .transition(.move(edge: .top).combined(with: .opacity))
-                                        }
-                                    }
-                                }
-                            }
-                        } else {
-                            Text("Empty transcription")
-                                .italic()
-                                .foregroundStyle(.secondary)
-                        }
-                    case .failed:
-                        HStack(spacing: 4) {
-                            Image(systemName: "exclamationmark.triangle.fill")
-                                .foregroundStyle(.orange)
-                            Text("Transcription failed")
-                                .foregroundStyle(.secondary)
-                        }
-                    case .cancelled:
-                        HStack(spacing: 4) {
-                            Image(systemName: "slash.circle")
-                                .foregroundStyle(.secondary)
-                            Text("Retranscription cancelled")
-                                .foregroundStyle(.secondary)
-                        }
-                    case .pending:
-                        Text("Pending...")
-                                .italic()
-                                .foregroundStyle(.secondary)
-                    }
-                }
-                .font(.subheadline)
+                HistoryRowContent(
+                    recording: recording,
+                    transcriptionStatus: transcriptionStatus,
+                    latestPostProcessedResult: latestPostProcessedResult,
+                    latestPostProcessedText: latestPostProcessedText,
+                    textForCopy: textForCopy,
+                    onCancelRetranscribe: {
+                        RecordingOrchestrator.shared.cancelRetranscribe(recording: recording)
+                    },
+                    isExpanded: $isExpanded,
+                    isSegmentsExpanded: $isSegmentsExpanded
+                )
             }
 
-            // Actions Column
-            VStack(spacing: 6) {
-                if (transcriptionStatus == .completed || transcriptionStatus == .streamingTranscription), let text = textForCopy, !text.isEmpty {
-                    Button {
-                        ClipboardService.shared.copyToClipboard(text)
-                        withAnimation {
-                            showCopyFeedback = true
-                        }
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-                            withAnimation {
-                                showCopyFeedback = false
-                            }
-                        }
-                    } label: {
-                        Image(systemName: showCopyFeedback ? "checkmark" : "doc.on.doc")
-                            .font(.system(size: 13))
-                            .foregroundStyle(showCopyFeedback ? .green : .secondary)
-                            .frame(width: 22, height: 22)
-                            .background(Color.white.opacity(0.08))
-                            .clipShape(RoundedRectangle(cornerRadius: 6))
-                    }
-                    .buttonStyle(.plain)
-                    .help("Copy")
-                }
-
-                DeleteIconButton(action: onDelete)
-                    .scaleEffect(0.9)
-            }
-            .padding(.top, 2)
+            HistoryRowActions(
+                transcriptionStatus: transcriptionStatus,
+                textToCopy: textForCopy,
+                showCopyFeedback: showCopyFeedback,
+                onCopy: copyCurrentText,
+                onDelete: onDelete
+            )
         }
         .glassRowStyle(isHovering: isHovering || isExpanded)
         .onHover { isHovering = $0 }
-
         .contextMenu {
             if let postProcessed = latestPostProcessedText {
                 Button {
@@ -433,6 +136,20 @@ struct HistoryRowView: View {
 
             Button(role: .destructive, action: onDelete) {
                 Label("Delete", systemImage: "trash")
+            }
+        }
+    }
+
+    private func copyCurrentText() {
+        guard let text = textForCopy, !text.isEmpty else { return }
+
+        ClipboardService.shared.copyToClipboard(text)
+        withAnimation {
+            showCopyFeedback = true
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+            withAnimation {
+                showCopyFeedback = false
             }
         }
     }

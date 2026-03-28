@@ -6,45 +6,32 @@ struct ModelsSettingsView: View {
     @State private var selectedTab: TranscriptionEngine = .whisperKit
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 24) {
-
-                SettingsHeaderView(
-                    title: "Speech Recognition Models",
-                    subtitle: "Choose transcription engine and model. Larger models are more accurate but slower.",
-                    systemImage: "cpu"
-                )
-
-                // MARK: - Engine Selector
-
-                Picker("Engine", selection: $selectedTab) {
-                    ForEach(TranscriptionEngine.allCases) { engine in
-                        Label(engine.displayName, systemImage: engine.iconName)
-                            .tag(engine)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .onAppear {
-                    // Set the tab to the currently active engine ONLY ONCE when view appears.
-                    // Notice we removed .onChange: switching tabs DOES NOT switch the engine.
-                    selectedTab = appState.selectedEngine
-                }
-
-                Text(selectedTab.description)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-
-                // MARK: - Tab Content
-
-                switch selectedTab {
-                case .whisperKit:
-                    whisperKitModelsList
-
-                case .parakeet:
-                    parakeetModelsList
+        SettingsPageContainer(
+            title: "Speech Recognition Models",
+            subtitle: "Choose transcription engine and model. Larger models are more accurate but slower.",
+            systemImage: "cpu"
+        ) {
+            Picker("Engine", selection: $selectedTab) {
+                ForEach(TranscriptionEngine.allCases) { engine in
+                    Label(engine.displayName, systemImage: engine.iconName)
+                        .tag(engine)
                 }
             }
-            .padding(AppTheme.pagePadding)
+            .pickerStyle(.segmented)
+            .onAppear {
+                selectedTab = appState.selectedEngine
+            }
+
+            Text(selectedTab.description)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            switch selectedTab {
+            case .whisperKit:
+                whisperKitModelsList
+            case .parakeet:
+                parakeetModelsList
+            }
         }
     }
 

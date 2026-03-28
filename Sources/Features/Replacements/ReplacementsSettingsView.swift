@@ -12,48 +12,40 @@ struct ReplacementsSettingsView: View {
         GeometryReader { geometry in
             let containerWidth = geometry.size.width - (AppTheme.pagePadding * 2)
 
-            ScrollView {
-                VStack(alignment: .leading, spacing: 24) {
-
-                    // Header
-                    SettingsHeaderView(
-                        title: "User Dictionary",
-                        subtitle: "Add custom words and phrases to improve transcription accuracy and automatically replace text.",
-                        systemImage: "book.pages"
-                    ) {
-                        Button(action: { showingAddSheet = true }) {
-                            Label("Add Rule", systemImage: "plus")
-                        }
-                        .buttonStyle(.bordered)
-                        .controlSize(.regular)
-                    }
-
-                    // Rules List
-                    if rules.isEmpty {
-                        ContentUnavailableView(
-                            "No Rules Added",
-                            systemImage: "book.pages",
-                            description: Text("Add rules to fix common transcription errors.")
-                        )
-                        .padding(.top, 40)
-                    } else {
-                        VStack(spacing: AppTheme.spacing) {
-                            ForEach(rules) { rule in
-                                ReplacementRowView(
-                                    rule: rule,
-                                    containerWidth: containerWidth,
-                                    onEdit: {
-                                        ruleToEdit = rule
-                                    },
-                                    onDelete: {
-                                        deleteRule(rule)
-                                    }
-                                )
-                            }
+            SettingsPageContainer(
+                title: "User Dictionary",
+                subtitle: "Add custom words and phrases to improve transcription accuracy and automatically replace text.",
+                systemImage: "book.pages"
+            ) {
+                Button(action: { showingAddSheet = true }) {
+                    Label("Add Rule", systemImage: "plus")
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.regular)
+            } content: {
+                if rules.isEmpty {
+                    ContentUnavailableView(
+                        "No Rules Added",
+                        systemImage: "book.pages",
+                        description: Text("Add rules to fix common transcription errors.")
+                    )
+                    .padding(.top, 40)
+                } else {
+                    VStack(spacing: AppTheme.spacing) {
+                        ForEach(rules) { rule in
+                            ReplacementRowView(
+                                rule: rule,
+                                containerWidth: containerWidth,
+                                onEdit: {
+                                    ruleToEdit = rule
+                                },
+                                onDelete: {
+                                    deleteRule(rule)
+                                }
+                            )
                         }
                     }
                 }
-                .padding(AppTheme.pagePadding)
             }
         }
         .sheet(isPresented: $showingAddSheet) {

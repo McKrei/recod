@@ -6,27 +6,23 @@ struct ModelRowView: View {
     let title: String
     let subtitle: String?
     let sizeDescription: String
-    
+
     let isDownloaded: Bool
     let isDownloading: Bool
     let downloadProgress: Double
     let isSelected: Bool
-    
+
     let onSelect: () -> Void
     let onDownload: () -> Void
     let onCancel: () -> Void
     let onDelete: () -> Void
 
-    @State private var isHovering = false
-
     var body: some View {
-        Button(action: {
-            if isDownloaded {
-                onSelect()
-            }
-        }) {
+        InteractiveGlassRow(
+            isSelected: isSelected,
+            onTap: isDownloaded ? onSelect : nil
+        ) { _ in
             HStack(spacing: 12) {
-                // Name (Fixed width or flexible)
                 HStack(spacing: 8) {
                     if isSelected {
                         Image(systemName: "checkmark")
@@ -50,7 +46,7 @@ struct ModelRowView: View {
                             .font(.body)
                             .foregroundStyle(isSelected ? Color.primary : Color.primary.opacity(0.9))
 
-                        if let subtitle = subtitle {
+                        if let subtitle {
                             Text(subtitle)
                                 .font(.caption2)
                                 .foregroundStyle(.secondary)
@@ -61,20 +57,15 @@ struct ModelRowView: View {
 
                 Spacer()
 
-                // Size
                 Text(sizeDescription)
                     .font(.callout)
                     .foregroundStyle(.secondary)
                     .frame(width: 80, alignment: .trailing)
 
-                // Action
                 actionSection
                     .frame(width: 60, alignment: .center)
             }
-            .glassRowStyle(isSelected: isSelected, isHovering: isHovering)
         }
-        .buttonStyle(.plain)
-        .onHover { isHovering = $0 }
     }
 
     @ViewBuilder

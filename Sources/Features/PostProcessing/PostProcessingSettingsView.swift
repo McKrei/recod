@@ -11,66 +11,61 @@ struct PostProcessingSettingsView: View {
     @State private var showingDefaultSystemPromptSheet = false
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 24) {
-                SettingsHeaderView(
-                    title: "Post-Processing Actions",
-                    subtitle: "Run AI prompts on finished transcripts using OpenAI-compatible providers.",
-                    systemImage: "wand.and.stars"
-                ) {
-                    HStack(spacing: AppTheme.spacing) {
-                        Button(action: { showingDefaultSystemPromptSheet = true }) {
-                            Label("Default System Prompt", systemImage: "text.bubble")
-                        }
-                        .buttonStyle(.bordered)
-                        .controlSize(.regular)
-
-                        Button(action: { showingAddSheet = true }) {
-                            Label("Add Action", systemImage: "plus")
-                        }
-                        .buttonStyle(.bordered)
-                        .controlSize(.regular)
-                    }
+        SettingsPageContainer(
+            title: "Post-Processing Actions",
+            subtitle: "Run AI prompts on finished transcripts using OpenAI-compatible providers.",
+            systemImage: "wand.and.stars"
+        ) {
+            HStack(spacing: AppTheme.spacing) {
+                Button(action: { showingDefaultSystemPromptSheet = true }) {
+                    Label("Default System Prompt", systemImage: "text.bubble")
                 }
+                .buttonStyle(.bordered)
+                .controlSize(.regular)
 
-                if actions.isEmpty {
-                    ContentUnavailableView(
-                        "No Actions Added",
-                        systemImage: "wand.and.stars",
-                        description: Text("Create your first action to transform transcripts automatically or on demand.")
-                    )
-                    .padding(.top, 40)
-                } else {
-                    VStack(spacing: AppTheme.spacing) {
-                        ForEach(actions) { action in
-                            ActionRowView(
-                                action: action,
-                                onAutoEnabledChange: { isEnabled in
-                                    withAnimation {
-                                        if isEnabled {
-                                            for candidate in actions {
-                                                candidate.isAutoEnabled = (candidate.id == action.id)
-                                            }
-                                        } else {
-                                            action.isAutoEnabled = false
+                Button(action: { showingAddSheet = true }) {
+                    Label("Add Action", systemImage: "plus")
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.regular)
+            }
+        } content: {
+            if actions.isEmpty {
+                ContentUnavailableView(
+                    "No Actions Added",
+                    systemImage: "wand.and.stars",
+                    description: Text("Create your first action to transform transcripts automatically or on demand.")
+                )
+                .padding(.top, 40)
+            } else {
+                VStack(spacing: AppTheme.spacing) {
+                    ForEach(actions) { action in
+                        ActionRowView(
+                            action: action,
+                            onAutoEnabledChange: { isEnabled in
+                                withAnimation {
+                                    if isEnabled {
+                                        for candidate in actions {
+                                            candidate.isAutoEnabled = (candidate.id == action.id)
                                         }
-                                        try? modelContext.save()
+                                    } else {
+                                        action.isAutoEnabled = false
                                     }
-                                },
-                                onEdit: {
-                                    actionToEdit = action
-                                },
-                                onDelete: {
-                                    withAnimation {
-                                        modelContext.delete(action)
-                                    }
+                                    try? modelContext.save()
                                 }
-                            )
-                        }
+                            },
+                            onEdit: {
+                                actionToEdit = action
+                            },
+                            onDelete: {
+                                withAnimation {
+                                    modelContext.delete(action)
+                                }
+                            }
+                        )
                     }
                 }
             }
-            .padding(AppTheme.pagePadding)
         }
         .sheet(isPresented: $showingAddSheet) {
             AddActionView(actionToEdit: nil)
@@ -94,7 +89,6 @@ struct PostProcessingSettingsView: View {
             )
         }
     }
-
 }
 
 #Preview {
