@@ -2,6 +2,37 @@ import Foundation
 import SwiftData
 
 @MainActor
+protocol RecordingPersistenceServing: AnyObject {
+    func createStreamingRecording(
+        for url: URL,
+        engine: TranscriptionEngine,
+        context: ModelContext
+    ) throws -> Recording
+    func resolveRecordingForFinalization(
+        from draftRecording: Recording?,
+        url: URL,
+        duration: TimeInterval,
+        context: ModelContext
+    ) throws -> Recording
+    func delete(_ recording: Recording, context: ModelContext)
+    func save(_ context: ModelContext) throws
+    func saveIfPossible(_ context: ModelContext)
+    func updateStatus(
+        _ status: Recording.TranscriptionStatus,
+        for recording: Recording,
+        context: ModelContext
+    )
+    func markFailed(for recording: Recording, context: ModelContext)
+    func markCancelled(for recording: Recording, context: ModelContext)
+    func fetchRecording(id: UUID, context: ModelContext) -> Recording?
+    func prepareForRetranscription(
+        _ recording: Recording,
+        engine: TranscriptionEngine,
+        context: ModelContext
+    )
+}
+
+@MainActor
 final class RecordingPersistenceService {
     static let shared = RecordingPersistenceService()
 
@@ -93,3 +124,5 @@ final class RecordingPersistenceService {
         saveIfPossible(context)
     }
 }
+
+extension RecordingPersistenceService: RecordingPersistenceServing {}

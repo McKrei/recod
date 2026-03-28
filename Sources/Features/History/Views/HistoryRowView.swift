@@ -7,7 +7,9 @@ struct HistoryRowView: View {
     let onDelete: () -> Void
     let onDeleteAudioOnly: () -> Void
     let onRetranscribe: () -> Void
+    let onCancelRetranscribe: () -> Void
     let onRunPostProcessing: (PostProcessingAction) -> Void
+    let onCopyText: (String) -> Void
 
     @State private var isHovering = false
     @State private var isExpanded = false
@@ -73,9 +75,7 @@ struct HistoryRowView: View {
                     latestPostProcessedResult: latestPostProcessedResult,
                     latestPostProcessedText: latestPostProcessedText,
                     textForCopy: textForCopy,
-                    onCancelRetranscribe: {
-                        RecordingOrchestrator.shared.cancelRetranscribe(recording: recording)
-                    },
+                    onCancelRetranscribe: onCancelRetranscribe,
                     isExpanded: $isExpanded,
                     isSegmentsExpanded: $isSegmentsExpanded
                 )
@@ -94,7 +94,7 @@ struct HistoryRowView: View {
         .contextMenu {
             if let postProcessed = latestPostProcessedText {
                 Button {
-                    ClipboardService.shared.copyToClipboard(postProcessed)
+                    onCopyText(postProcessed)
                 } label: {
                     Label("Copy Post-Processed", systemImage: "wand.and.stars")
                 }
@@ -102,7 +102,7 @@ struct HistoryRowView: View {
 
             if let transcription = recording.transcription, !transcription.isEmpty {
                 Button {
-                    ClipboardService.shared.copyToClipboard(transcription)
+                    onCopyText(transcription)
                 } label: {
                     Label("Copy Original", systemImage: "doc.on.doc")
                 }
@@ -122,9 +122,7 @@ struct HistoryRowView: View {
                 }
 
                 if recording.transcriptionStatus == .queued {
-                    Button(role: .destructive) {
-                        RecordingOrchestrator.shared.cancelRetranscribe(recording: recording)
-                    } label: {
+                    Button(role: .destructive, action: onCancelRetranscribe) {
                         Label("Cancel Retranscription", systemImage: "xmark.circle")
                     }
                 }
@@ -137,9 +135,9 @@ struct HistoryRowView: View {
     }
 
     private func copyCurrentText() {
-        guard let text = textForCopy, !text.isEmpty else { return }
+        guard let text = textForCopy.nilIfBlank else { return }
 
-        ClipboardService.shared.copyToClipboard(text)
+        onCopyText(text)
         withAnimation {
             showCopyFeedback = true
         }

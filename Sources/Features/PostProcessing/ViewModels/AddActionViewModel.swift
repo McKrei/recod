@@ -46,13 +46,13 @@ final class AddActionViewModel {
     }
 
     var canSave: Bool {
-        !actionName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            && !modelID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        !actionName.isBlank
+            && !modelID.isBlank
             && selectedProvider != nil
     }
 
     var hasCustomSystemPrompt: Bool {
-        !systemPromptText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        !systemPromptText.isBlank
     }
 
     func prepare() {
@@ -92,7 +92,7 @@ final class AddActionViewModel {
         modelsError = nil
 
         let baseURL = resolvedBaseURL(for: provider)
-        let apiKey = providerAPIKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        let apiKey = providerAPIKey.trimmed()
 
         Task {
             await FileLogger.shared.log(
@@ -151,10 +151,10 @@ final class AddActionViewModel {
     func saveAction(in modelContext: ModelContext) -> Bool {
         guard let provider = selectedProvider else { return false }
 
-        let cleanName = actionName.trimmingCharacters(in: .whitespacesAndNewlines)
-        let cleanPrompt = promptText.trimmingCharacters(in: .whitespacesAndNewlines)
-        let cleanSystemPrompt = systemPromptText.trimmingCharacters(in: .whitespacesAndNewlines)
-        let cleanModel = modelID.trimmingCharacters(in: .whitespacesAndNewlines)
+        let cleanName = actionName.trimmed()
+        let cleanPrompt = promptText.trimmed()
+        let cleanSystemPrompt = systemPromptText.trimmed()
+        let cleanModel = modelID.trimmed()
         guard !cleanName.isEmpty, !cleanModel.isEmpty else { return false }
 
         let providerID = resolvedProviderID(from: provider)
@@ -211,7 +211,7 @@ final class AddActionViewModel {
         existingFilePath: String
     ) -> String? {
         let rawPath = mode == .newFile ? directoryPath : existingFilePath
-        let trimmed = rawPath.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmed = rawPath.trimmed()
         return trimmed.isEmpty ? nil : trimmed
     }
 
@@ -269,10 +269,10 @@ final class AddActionViewModel {
         availableModels = []
 
         if provider.isCustom {
-            if customBaseURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            if customBaseURL.isBlank {
                 customBaseURL = LLMProvider.customDefaultBaseURL
             }
-            if customProviderName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+            if customProviderName.isBlank,
                provider.id != BuiltinProviderID.custom.rawValue {
                 customProviderName = provider.displayName
             }
@@ -297,7 +297,7 @@ final class AddActionViewModel {
 
     private func resolvedBaseURL(for provider: LLMProvider) -> String {
         if provider.isCustom {
-            return customBaseURL.trimmingCharacters(in: .whitespacesAndNewlines)
+            return customBaseURL.trimmed()
         }
         return provider.baseURL
     }
@@ -317,7 +317,7 @@ final class AddActionViewModel {
     }
 
     private func persistAPIKey(for providerID: String) {
-        let cleanKey = providerAPIKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        let cleanKey = providerAPIKey.trimmed()
         if cleanKey.isEmpty {
             try? KeychainService.deleteAPIKey(forProviderID: providerID)
         } else {

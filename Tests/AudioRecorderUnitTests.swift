@@ -1,5 +1,5 @@
 import Testing
-import AVFoundation
+@preconcurrency import AVFoundation
 import Foundation
 import CoreAudio
 

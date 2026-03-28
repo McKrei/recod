@@ -71,8 +71,7 @@ extension PostProcessingAction {
     }
 
     var trimmedSystemPrompt: String? {
-        let trimmed = systemPrompt?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        return trimmed.isEmpty ? nil : trimmed
+        systemPrompt.nilIfBlank
     }
 
     var hasCustomSystemPrompt: Bool {
@@ -92,7 +91,7 @@ extension PostProcessingAction {
     }
 
     var effectiveExtension: String {
-        let ext = saveToFileExtension?.trimmingCharacters(in: .whitespacesAndNewlines) ?? Self.defaultSaveToFileExtension
+        let ext = saveToFileExtension.nilIfBlank ?? Self.defaultSaveToFileExtension
         return ext.hasPrefix(".") ? ext : ".\(ext)"
     }
 }

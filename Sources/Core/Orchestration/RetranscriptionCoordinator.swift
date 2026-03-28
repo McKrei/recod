@@ -3,17 +3,30 @@ import SwiftData
 
 @MainActor
 final class RetranscriptionCoordinator {
+    typealias EnqueueJob = @Sendable (BatchTranscriptionJob) async -> Void
+    typealias CancelJob = @Sendable (UUID) async -> Void
+
     static let shared = RetranscriptionCoordinator()
 
-    private let persistenceService: RecordingPersistenceService
-    private let finalizationPipeline: RecordingFinalizationPipeline
+    private let persistenceService: any RecordingPersistenceServing
+    private let finalizationPipeline: any RecordingFinalizationPipelining
+    private let enqueueJob: EnqueueJob
+    private let cancelJob: CancelJob
 
     init(
-        persistenceService: RecordingPersistenceService = .shared,
-        finalizationPipeline: RecordingFinalizationPipeline = .shared
+        persistenceService: any RecordingPersistenceServing = RecordingPersistenceService.shared,
+        finalizationPipeline: any RecordingFinalizationPipelining = RecordingFinalizationPipeline.shared,
+        enqueueJob: @escaping EnqueueJob = { job in
+            BatchTranscriptionQueue.shared.enqueue(job)
+        },
+        cancelJob: @escaping CancelJob = { recordingID in
+            await BatchTranscriptionQueue.shared.cancel(recordingID: recordingID)
+        }
     ) {
         self.persistenceService = persistenceService
         self.finalizationPipeline = finalizationPipeline
+        self.enqueueJob = enqueueJob
+        self.cancelJob = cancelJob
     }
 
     func retranscribe(
@@ -60,13 +73,13 @@ final class RetranscriptionCoordinator {
             await FileLogger.shared.log(
                 "Retranscribe enqueued: \(recording.filename), engine=\(engine.displayName)"
             )
-            await BatchTranscriptionQueue.shared.enqueue(job)
+            await enqueueJob(job)
         }
     }
 
     func cancelRetranscribe(recordingID: UUID) {
         Task {
-            await BatchTranscriptionQueue.shared.cancel(recordingID: recordingID)
+            await cancelJob(recordingID)
         }
     }
 

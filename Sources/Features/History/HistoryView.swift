@@ -4,6 +4,7 @@ import SwiftData
 struct HistoryView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(AudioPlayer.self) private var audioPlayer
+    @EnvironmentObject private var appState: AppState
 
     @Query(sort: \Recording.createdAt, order: .reverse)
     private var recordings: [Recording]
@@ -38,9 +39,11 @@ struct HistoryView: View {
                                 onDelete: { deleteRecording(recording) },
                                 onDeleteAudioOnly: { deleteAudioOnly(recording) },
                                 onRetranscribe: { retranscribeRecording(recording) },
+                                onCancelRetranscribe: { cancelRetranscription(recording) },
                                 onRunPostProcessing: { action in
                                     runPostProcessing(recording, action: action)
-                                }
+                                },
+                                onCopyText: copyText
                             )
                         }
                     }
@@ -116,11 +119,19 @@ struct HistoryView: View {
     }
 
     private func retranscribeRecording(_ recording: Recording) {
-        RecordingOrchestrator.shared.retranscribe(recording: recording)
+        appState.retranscribe(recording)
+    }
+
+    private func cancelRetranscription(_ recording: Recording) {
+        appState.cancelRetranscribe(recording)
     }
 
     private func runPostProcessing(_ recording: Recording, action: PostProcessingAction) {
-        RecordingOrchestrator.shared.runManualPostProcessing(recording: recording, action: action)
+        appState.runManualPostProcessing(recording: recording, action: action)
+    }
+
+    private func copyText(_ text: String) {
+        appState.copyTextToClipboard(text)
     }
 }
 

@@ -340,7 +340,7 @@ final class RecordingOrchestrator: ObservableObject {
     /// Manually triggers post-processing for a completed recording.
     /// Runs asynchronously, allowing multiple recordings to process independently.
     public func runManualPostProcessing(recording: Recording, action: PostProcessingAction) {
-        guard recording.transcription?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false else {
+        guard recording.transcription.nilIfBlank != nil else {
             return
         }
 

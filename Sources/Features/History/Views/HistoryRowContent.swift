@@ -50,7 +50,7 @@ struct HistoryRowContent: View {
                     .foregroundStyle(accent)
             }
 
-            if let text = trimmed(textForCopy) {
+            if let text = textForCopy.nilIfBlank {
                 expandableText(text, foregroundStyle: .primary)
             }
         }
@@ -217,9 +217,5 @@ struct HistoryRowContent: View {
             Text(text)
                 .foregroundStyle(.secondary)
         }
-    }
-
-    private func trimmed(_ text: String?) -> String? {
-        text.nilIfBlank
     }
 }

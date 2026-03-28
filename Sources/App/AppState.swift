@@ -115,4 +115,20 @@ class AppState: ObservableObject {
     func revealRecordings() {
         RecordingOrchestrator.shared.revealRecordings()
     }
+
+    func retranscribe(_ recording: Recording) {
+        RecordingOrchestrator.shared.retranscribe(recording: recording)
+    }
+
+    func cancelRetranscribe(_ recording: Recording) {
+        RecordingOrchestrator.shared.cancelRetranscribe(recording: recording)
+    }
+
+    func runManualPostProcessing(recording: Recording, action: PostProcessingAction) {
+        RecordingOrchestrator.shared.runManualPostProcessing(recording: recording, action: action)
+    }
+
+    func copyTextToClipboard(_ text: String) {
+        ClipboardService.shared.copyToClipboard(text)
+    }
 }

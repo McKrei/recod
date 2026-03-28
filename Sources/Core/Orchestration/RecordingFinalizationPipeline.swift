@@ -2,15 +2,88 @@ import Foundation
 import SwiftData
 
 @MainActor
+protocol RecordingFinalizationPipelining: AnyObject {
+    func processBatchResult(
+        recording: Recording,
+        text: String,
+        segments: [TranscriptionSegment],
+        context: ModelContext
+    ) async
+}
+
+@MainActor
 final class RecordingFinalizationPipeline {
     typealias TranscriptionPayload = (text: String, segments: [TranscriptionSegment])
+    typealias ReplacementRulesFetcher = @MainActor (ModelContext) throws -> [ReplacementRule]
+    typealias PostProcessingActionsFetcher = @MainActor (ModelContext) throws -> [PostProcessingAction]
+    typealias AutoPostProcessor = @MainActor (Recording, ModelContext, [PostProcessingAction]) async -> String?
+    typealias ClipboardInserter = @MainActor (String, Bool) async -> Void
+    typealias WhisperTranscriber = @MainActor (URL, URL, [ReplacementRule]) async throws -> TranscriptionPayload
+    typealias ParakeetTranscriber = @MainActor (URL, URL, [ReplacementRule]) async throws -> TranscriptionPayload
+    typealias OverlayErrorPresenter = @MainActor () async -> Void
+    typealias OverlaySuccessPresenter = @MainActor () async -> Void
+    typealias OverlayStatusUpdater = @MainActor (OverlayStatus) -> Void
 
     static let shared = RecordingFinalizationPipeline()
 
-    private let persistenceService: RecordingPersistenceService
+    private let persistenceService: any RecordingPersistenceServing
+    private let replacementRulesFetcher: ReplacementRulesFetcher
+    private let postProcessingActionsFetcher: PostProcessingActionsFetcher
+    private let runAutoPostProcessing: AutoPostProcessor
+    private let insertClipboardText: ClipboardInserter
+    private let whisperTranscriber: WhisperTranscriber
+    private let parakeetTranscriber: ParakeetTranscriber
+    private let showOverlayError: OverlayErrorPresenter
+    private let showOverlaySuccess: OverlaySuccessPresenter
+    private let updateOverlayStatus: OverlayStatusUpdater
 
-    init(persistenceService: RecordingPersistenceService = .shared) {
+    init(
+        persistenceService: any RecordingPersistenceServing = RecordingPersistenceService.shared,
+        fetchReplacementRules: @escaping ReplacementRulesFetcher = { context in
+            try context.fetch(FetchDescriptor<ReplacementRule>())
+        },
+        fetchPostProcessingActions: @escaping PostProcessingActionsFetcher = { context in
+            try context.fetch(FetchDescriptor<PostProcessingAction>())
+        },
+        runAutoPostProcessing: @escaping AutoPostProcessor = { recording, context, actions in
+            await PostProcessingService.shared.runAllAutoEnabled(on: recording, context: context, actions: actions)
+        },
+        insertClipboardText: @escaping ClipboardInserter = { text, preserveClipboard in
+            await ClipboardService.shared.insertText(text, preserveClipboard: preserveClipboard)
+        },
+        whisperTranscriber: @escaping WhisperTranscriber = { url, modelURL, rules in
+            try await TranscriptionService.shared.transcribe(audioURL: url, modelURL: modelURL, rules: rules)
+        },
+        parakeetTranscriber: @escaping ParakeetTranscriber = { url, modelDir, rules in
+            let hotwords = rules.map { rule in
+                ParakeetHotword(text: rule.textToReplace, weight: rule.weight)
+            }
+            return try await ParakeetTranscriptionService.shared.transcribe(
+                audioURL: url,
+                modelDir: modelDir,
+                hotwords: hotwords
+            )
+        },
+        showOverlayError: @escaping OverlayErrorPresenter = {
+            await OverlayState.shared.showError()
+        },
+        showOverlaySuccess: @escaping OverlaySuccessPresenter = {
+            await OverlayState.shared.showSuccess()
+        },
+        updateOverlayStatus: @escaping OverlayStatusUpdater = { status in
+            OverlayState.shared.status = status
+        }
+    ) {
         self.persistenceService = persistenceService
+        self.replacementRulesFetcher = fetchReplacementRules
+        self.postProcessingActionsFetcher = fetchPostProcessingActions
+        self.runAutoPostProcessing = runAutoPostProcessing
+        self.insertClipboardText = insertClipboardText
+        self.whisperTranscriber = whisperTranscriber
+        self.parakeetTranscriber = parakeetTranscriber
+        self.showOverlayError = showOverlayError
+        self.showOverlaySuccess = showOverlaySuccess
+        self.updateOverlayStatus = updateOverlayStatus
     }
 
     func finalizeStoppedRecording(
@@ -26,7 +99,7 @@ final class RecordingFinalizationPipeline {
         persistenceService.updateStatus(.transcribing, for: recording, context: context)
 
         do {
-            let rules = await fetchReplacementRules(context: context)
+            let rules = await loadReplacementRules(context: context)
             let transcription = try await resolveFinalTranscription(
                 for: engine,
                 recording: recording,
@@ -52,7 +125,7 @@ final class RecordingFinalizationPipeline {
         } catch {
             persistenceService.markFailed(for: recording, context: context)
             await FileLogger.shared.log("Transcription failed: \(error)", level: .error)
-            await OverlayState.shared.showError()
+            await showOverlayError()
         }
     }
 
@@ -92,7 +165,7 @@ final class RecordingFinalizationPipeline {
         skipClipboard: Bool,
         showOverlayFeedback: Bool
     ) async throws {
-        let rules = await fetchReplacementRules(context: context)
+        let rules = await loadReplacementRules(context: context)
 
         recording.segments = transcription.segments
 
@@ -112,7 +185,7 @@ final class RecordingFinalizationPipeline {
         if enabledCount > 0 {
             persistenceService.updateStatus(.postProcessing, for: recording, context: context)
             if showOverlayFeedback {
-                OverlayState.shared.status = .postProcessing
+                updateOverlayStatus(.postProcessing)
             }
 
             await FileLogger.shared.log(
@@ -120,11 +193,7 @@ final class RecordingFinalizationPipeline {
                 level: .info
             )
 
-            let postProcessedText = await PostProcessingService.shared.runAllAutoEnabled(
-                on: recording,
-                context: context,
-                actions: actions
-            )
+            let postProcessedText = await runAutoPostProcessing(recording, context, actions)
 
             if let postProcessedText {
                 textForClipboard = postProcessedText
@@ -143,18 +212,18 @@ final class RecordingFinalizationPipeline {
 
         if !skipClipboard {
             Task {
-                await ClipboardService.shared.insertText(textForClipboard, preserveClipboard: !saveToClipboard)
+                await insertClipboardText(textForClipboard, !saveToClipboard)
             }
         }
 
         if showOverlayFeedback {
-            await OverlayState.shared.showSuccess()
+            await showOverlaySuccess()
         }
     }
 
-    private func fetchReplacementRules(context: ModelContext) async -> [ReplacementRule] {
+    private func loadReplacementRules(context: ModelContext) async -> [ReplacementRule] {
         do {
-            return try context.fetch(FetchDescriptor<ReplacementRule>())
+            return try replacementRulesFetcher(context)
         } catch {
             await FileLogger.shared.log("Failed to fetch replacement rules: \(error)", level: .error)
             return []
@@ -163,7 +232,7 @@ final class RecordingFinalizationPipeline {
 
     private func fetchPostProcessingActions(context: ModelContext) async -> [PostProcessingAction] {
         do {
-            let actions = try context.fetch(FetchDescriptor<PostProcessingAction>())
+            let actions = try postProcessingActionsFetcher(context)
             await FileLogger.shared.log("Post-processing actions fetched: \(actions.count)", level: .debug)
             return actions
         } catch {
@@ -222,7 +291,7 @@ final class RecordingFinalizationPipeline {
             "Streaming Whisper result empty. Falling back to full-file batch transcription.",
             level: .warning
         )
-        let result = try await TranscriptionService.shared.transcribe(audioURL: url, modelURL: modelURL, rules: rules)
+        let result = try await whisperTranscriber(url, modelURL, rules)
         return (result.0, result.1)
     }
 
@@ -249,14 +318,7 @@ final class RecordingFinalizationPipeline {
             "Streaming Parakeet result empty. Falling back to full-file batch transcription.",
             level: .warning
         )
-        let hotwords = rules.map { rule in
-            ParakeetHotword(text: rule.textToReplace, weight: rule.weight)
-        }
-        let result = try await ParakeetTranscriptionService.shared.transcribe(
-            audioURL: url,
-            modelDir: modelDir,
-            hotwords: hotwords
-        )
+        let result = try await parakeetTranscriber(url, modelDir, rules)
         return (result.0, result.1)
     }
 
@@ -265,3 +327,5 @@ final class RecordingFinalizationPipeline {
         return trimmed.isEmpty ? nil : trimmed
     }
 }
+
+extension RecordingFinalizationPipeline: RecordingFinalizationPipelining {}
