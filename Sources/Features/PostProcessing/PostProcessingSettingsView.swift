@@ -33,8 +33,6 @@ struct PostProcessingSettingsView: View {
                     }
                 }
 
-                defaultSystemPromptSection
-
                 if actions.isEmpty {
                     ContentUnavailableView(
                         "No Actions Added",
@@ -97,30 +95,6 @@ struct PostProcessingSettingsView: View {
         }
     }
 
-    private var defaultSystemPromptSection: some View {
-        GroupBox {
-            HStack(alignment: .top, spacing: AppTheme.spacing) {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Default System Prompt")
-                        .font(.headline)
-
-                    Text(appState.defaultPostProcessingSystemPrompt)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(3)
-                }
-
-                Spacer(minLength: AppTheme.spacing)
-
-                Button("Edit") {
-                    showingDefaultSystemPromptSheet = true
-                }
-                .buttonStyle(.bordered)
-            }
-            .padding(8)
-        }
-        .groupBoxStyle(GlassGroupBoxStyle())
-    }
 }
 
 #Preview {

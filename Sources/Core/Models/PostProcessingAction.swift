@@ -44,7 +44,7 @@ final class PostProcessingAction {
         self.id = id
         self.name = name
         self.prompt = prompt
-        self.systemPrompt = systemPrompt?.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.systemPrompt = systemPrompt
         self.providerID = providerID
         self.modelID = modelID
         self.isAutoEnabled = isAutoEnabled
@@ -71,8 +71,7 @@ extension PostProcessingAction {
     }
 
     var trimmedSystemPrompt: String? {
-        guard let systemPrompt else { return nil }
-        let trimmed = systemPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmed = systemPrompt?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         return trimmed.isEmpty ? nil : trimmed
     }
 

@@ -13,19 +13,20 @@ final class PostProcessingService {
             return
         }
 
+        let effectiveSystemPrompt = action.trimmedSystemPrompt ?? AppState.shared.defaultPostProcessingSystemPrompt
+
         await FileLogger.shared.log(
             "Post-processing action start: action=\(action.name), provider=\(action.providerID), model=\(action.modelID)",
             level: .info
         )
 
-        let finalPrompt = action.prompt.isEmpty ? PostProcessingPromptDefaults.userPrompt : action.prompt
-        let systemPrompt = action.trimmedSystemPrompt ?? AppState.shared.defaultPostProcessingSystemPrompt
+        let finalPrompt = action.prompt.isEmpty ? "Transcript:\n${output}" : action.prompt
         let outputWithTimestamps = formatOutputWithTimestamps(for: recording, fallbackText: sourceText)
         let userText = finalPrompt
             .replacingOccurrences(of: "${output_with_timestamps}", with: outputWithTimestamps)
             .replacingOccurrences(of: "${output}", with: sourceText)
         let inputMessages = [
-            LLMMessage(role: .system, content: systemPrompt),
+            LLMMessage(role: .system, content: effectiveSystemPrompt),
             LLMMessage(role: .user, content: userText)
         ]
 
