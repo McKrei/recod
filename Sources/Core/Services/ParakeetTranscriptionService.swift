@@ -190,12 +190,12 @@ actor ParakeetTranscriptionService {
         }
 
         // Wait for audio file to be ready
-        let frameCount = try await waitForFileReady(url: audioURL)
-        if frameCount == 0 {
+        let readiness = await AudioFileReadinessChecker.waitForReadableFrames(at: audioURL)
+        if readiness.frameCount == 0 {
             await FileLogger.shared.log("Skipping transcription for empty audio file.")
             return ("", [])
         }
-        await FileLogger.shared.log("Audio file verified and ready (\(frameCount) frames)")
+        await FileLogger.shared.log("Audio file verified and ready (\(readiness.frameCount) frames)")
 
         // Load and convert audio on a background thread
         await FileLogger.shared.log("Loading and converting audio to 16kHz mono...")
@@ -272,28 +272,5 @@ actor ParakeetTranscriptionService {
 
     var isModelLoaded: Bool {
         recognizer != nil
-    }
-
-    // MARK: - File Readiness Check
-
-    /// Waits for the audio file to become readable (e.g., after recording writes to disk).
-    /// Same pattern as TranscriptionService.
-    private func waitForFileReady(url: URL) async throws -> AVAudioFramePosition {
-        for i in 0..<12 {
-            do {
-                let file = try AVAudioFile(forReading: url)
-                let length = file.length
-                if length > 0 {
-                    return length
-                }
-            } catch {
-                // Ignore and retry
-            }
-
-            try? await Task.sleep(nanoseconds: 100_000_000 * UInt64(i + 1))
-        }
-
-        await FileLogger.shared.log("Audio file is empty after verification. Treating as empty recording.", level: .warning)
-        return 0 // Return 0 instead of throwing to handle empty recordings gracefully
     }
 }

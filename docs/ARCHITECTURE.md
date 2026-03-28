@@ -3,7 +3,11 @@
 ## Обзор
 Recod — это нативное приложение для macOS, созданное с использованием **SwiftUI 6** и **SwiftData**. Оно следует модульному паттерну MVVM (Model-View-ViewModel), с четким разделением ответственностей и использованием современной конкурентности (`async/await`).
 
-См. также: `docs/POST_PROCESSING.md` для LLM post-processing подсистемы.
+См. также:
+- `docs/POST_PROCESSING.md` для LLM post-processing подсистемы;
+- `docs/TESTING.md` для структуры тестов и правил добавления новых suite;
+- `docs/PARAKEET_INTEGRATION.md` для деталей GPU/ONNX интеграции;
+- `docs/USER_DICTIONARY_BIASING.md` для word boosting и fuzzy replacement pipeline.
 
 ## Структура Проекта
 

@@ -183,11 +183,7 @@ struct RecodApp: App {
     init() {
         Self.backupDatabase()
 
-        do {
-            modelContainer = try ModelContainer(for: Recording.self, ReplacementRule.self, PostProcessingAction.self)
-        } catch {
-            fatalError("Could not initialize ModelContainer: \(error)")
-        }
+        modelContainer = Self.makeModelContainer()
 
         let container = modelContainer
         Task { @MainActor in
@@ -258,6 +254,32 @@ struct RecodApp: App {
                 } catch {
                     print("Failed to backup \(url.lastPathComponent): \(error)")
                 }
+            }
+        }
+    }
+
+    private static func makeModelContainer() -> ModelContainer {
+        do {
+            return try ModelContainer(for: Recording.self, ReplacementRule.self, PostProcessingAction.self)
+        } catch {
+            let message = "Could not initialize persistent ModelContainer: \(error). Falling back to in-memory store."
+            NSLog("%@", message)
+            Task {
+                await FileLogger.shared.log(message, level: .error)
+            }
+
+            do {
+                let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
+                return try ModelContainer(
+                    for: Recording.self,
+                    ReplacementRule.self,
+                    PostProcessingAction.self,
+                    configurations: configuration
+                )
+            } catch {
+                let fallbackMessage = "Could not initialize fallback in-memory ModelContainer: \(error)"
+                NSLog("%@", fallbackMessage)
+                preconditionFailure(fallbackMessage)
             }
         }
     }

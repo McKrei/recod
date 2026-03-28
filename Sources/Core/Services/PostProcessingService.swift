@@ -8,7 +8,7 @@ final class PostProcessingService {
     private init() {}
 
     func runAction(_ action: PostProcessingAction, on recording: Recording, context: ModelContext) async throws {
-        guard let sourceText = recording.transcription, !sourceText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+        guard let sourceText = recording.transcription.nilIfBlank else {
             await FileLogger.shared.log("Post-processing skipped: empty transcription for recording=\(recording.id)", level: .warning)
             return
         }
@@ -40,8 +40,8 @@ final class PostProcessingService {
             modelID: action.modelID
         )
 
-        let normalizedInput = sourceText.trimmingCharacters(in: .whitespacesAndNewlines)
-        let normalizedOutput = assistant.content.trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalizedInput = sourceText.trimmed()
+        let normalizedOutput = assistant.content.trimmed()
         let changed = normalizedInput != normalizedOutput
         let preview = String(normalizedOutput.prefix(160)).replacingOccurrences(of: "\n", with: " ")
 
@@ -111,8 +111,7 @@ final class PostProcessingService {
     /// Manually run a specific action on a recording.
     /// Clears any existing post-processed result before running.
     func runManual(_ action: PostProcessingAction, on recording: Recording, context: ModelContext) async throws {
-        guard let transcription = recording.transcription,
-              !transcription.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+        guard recording.transcription.nilIfBlank != nil else {
             await FileLogger.shared.log(
                 "Manual post-processing skipped: empty transcription for recording=\(recording.id)",
                 level: .warning

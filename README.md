@@ -53,6 +53,12 @@ make release MAJOR=2
 ```
 
 ## Документация
-Подробности архитектуры и релизного процесса:
+Основные документы по устройству проекта и workflow:
 - [Архитектура](docs/ARCHITECTURE.md)
+- [Тестирование](docs/TESTING.md)
+- [Post-processing](docs/POST_PROCESSING.md)
+- [Интеграция Parakeet](docs/PARAKEET_INTEGRATION.md)
+- [User dictionary и word boosting](docs/USER_DICTIONARY_BIASING.md)
 - [Релизы и обновления](docs/RELEASES.md)
+
+Архив выполненных инженерных планов хранится в `docs/plans_done/`.

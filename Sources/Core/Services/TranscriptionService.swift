@@ -58,8 +58,13 @@ final class TranscriptionService {
         }
 
         // Wait for file to be ready (e.g. after recording finishes and writes to disk)
-        let frameCount = try await waitForFileReady(url: audioURL)
-        await FileLogger.shared.log("Audio file verified and ready (\(frameCount) frames)")
+        let readiness = await AudioFileReadinessChecker.waitForReadableFrames(at: audioURL)
+        guard readiness.frameCount > 0 else {
+            await FileLogger.shared.log("Audio file is empty after verification.", level: .error)
+            let description = readiness.lastErrorDescription ?? "Audio samples are empty"
+            throw NSError(domain: "TranscriptionService", code: -1, userInfo: [NSLocalizedDescriptionKey: description])
+        }
+        await FileLogger.shared.log("Audio file verified and ready (\(readiness.frameCount) frames)")
 
         await FileLogger.shared.log("Starting WhisperKit inference...")
         let inferStart = Date()
@@ -113,27 +118,6 @@ final class TranscriptionService {
         return (text, segments)
     }
  
-    private func waitForFileReady(url: URL) async throws -> AVAudioFramePosition {
-        var lastError: Error?
-
-        for i in 0..<12 {
-            do {
-                let file = try AVAudioFile(forReading: url)
-                let length = file.length
-                if length > 0 {
-                    return length
-                }
-            } catch {
-                lastError = error
-            }
-
-            try? await Task.sleep(nanoseconds: 100_000_000 * UInt64(i + 1))
-        }
-
-        await FileLogger.shared.log("Audio file is empty after verification.", level: .error)
-        throw lastError ?? NSError(domain: "TranscriptionService", code: -1, userInfo: [NSLocalizedDescriptionKey: "Audio samples are empty"])
-    }
-
     func clearCache() {
         whisperKit = nil
         currentModelURL = nil

@@ -24,7 +24,7 @@ actor LLMService {
         modelID: String,
         timestampedText: String? = nil
     ) async throws -> String {
-        let resolvedSystemPrompt = systemPrompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let resolvedSystemPrompt = systemPrompt.isBlank
             ? PostProcessingPromptDefaults.systemPrompt
             : systemPrompt
         let userText = PostProcessingPromptBuilder.buildUserPrompt(
@@ -55,7 +55,7 @@ actor LLMService {
         request.httpMethod = "GET"
         request.timeoutInterval = 20
 
-        if let apiKey, !apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+        if let apiKey = apiKey.nilIfBlank {
             request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         }
 
@@ -98,7 +98,7 @@ actor LLMService {
         request.timeoutInterval = 60
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
-        if let apiKey, !apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+        if let apiKey = apiKey.nilIfBlank {
             request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         }
         request.httpBody = payloadData
@@ -129,7 +129,7 @@ actor LLMService {
     }
 
     private func normalizedBaseURL(_ raw: String) -> String {
-        let cleaned = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        let cleaned = raw.trimmed()
         if cleaned.hasSuffix("/") {
             return String(cleaned.dropLast())
         }

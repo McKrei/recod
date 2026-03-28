@@ -220,9 +220,6 @@ struct HistoryRowContent: View {
     }
 
     private func trimmed(_ text: String?) -> String? {
-        guard let text = text?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty else {
-            return nil
-        }
-        return text
+        text.nilIfBlank
     }
 }

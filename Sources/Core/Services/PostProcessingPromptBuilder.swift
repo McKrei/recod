@@ -10,7 +10,7 @@ enum PostProcessingPromptBuilder {
     }
 
     static func resolvedPrompt(_ prompt: String) -> String {
-        let trimmed = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmed = prompt.trimmed()
         return trimmed.isEmpty ? defaultPrompt : prompt
     }
 
@@ -34,8 +34,7 @@ enum PostProcessingPromptBuilder {
         }
 
         let lines = segments.compactMap { segment -> String? in
-            let text = segment.text.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !text.isEmpty else { return nil }
+            guard let text = segment.text.nilIfBlank else { return nil }
             return "[\(formatTimestamp(segment.start))] \(text)"
         }
 
@@ -43,7 +42,7 @@ enum PostProcessingPromptBuilder {
     }
 
     static func insertPlaceholder(_ placeholder: String, into prompt: String) -> String {
-        let trimmed = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmed = prompt.trimmed()
         guard !trimmed.isEmpty else {
             return placeholder
         }
@@ -60,7 +59,7 @@ enum PostProcessingPromptBuilder {
             return fallbackText
         }
 
-        let trimmed = timestampedText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmed = timestampedText.trimmed()
         return trimmed.isEmpty ? fallbackText : timestampedText
     }
 

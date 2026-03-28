@@ -22,11 +22,8 @@ enum ParakeetModelType: String, CaseIterable, Identifiable, Codable, Sendable {
         }
     }
 
-    var downloadURL: URL {
-        guard let url = URL(string: "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/\(rawValue).tar.bz2") else {
-            fatalError("Invalid Parakeet model URL for \(rawValue)")
-        }
-        return url
+    var downloadURL: URL? {
+        URL(string: "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/\(rawValue).tar.bz2")
     }
 
     var languages: String { "Fast CPU - 25 languages (en, ru, de...)" }
@@ -132,10 +129,19 @@ final class ParakeetModelManager: NSObject, @unchecked Sendable {
         Task {
             await FileLogger.shared.log("Starting Parakeet model download: \(model.type.displayName)")
 
+            guard let downloadURL = model.type.downloadURL else {
+                await FileLogger.shared.log("Parakeet model download failed: invalid download URL for \(model.type.rawValue)", level: .error)
+                await MainActor.run {
+                    self.models[index].isDownloading = false
+                    self.models[index].downloadProgress = 0.0
+                }
+                return
+            }
+
             do {
                 // Step 1: Download tar.bz2
                 let archivePath = try await downloadFile(
-                    from: model.type.downloadURL,
+                    from: downloadURL,
                     modelIndex: index
                 )
 

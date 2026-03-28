@@ -22,8 +22,7 @@ struct HistoryLogicTests {
             recording.isFileDeleted = true
         }
         
-        let text = recording.transcription ?? ""
-        if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+        if recording.transcription.nilIfBlank == nil {
             context.delete(recording)
         }
     }
@@ -34,8 +33,7 @@ struct HistoryLogicTests {
             try? FileManager.default.removeItem(at: recording.fileURL)
             recording.isFileDeleted = true
             
-            let text = recording.transcription ?? ""
-            if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            if recording.transcription.nilIfBlank == nil {
                 context.delete(recording)
             }
         }

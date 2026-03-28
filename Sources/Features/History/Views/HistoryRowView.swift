@@ -26,11 +26,7 @@ struct HistoryRowView: View {
     }
 
     private var latestPostProcessedText: String? {
-        guard let text = latestPostProcessedResult?.outputText.trimmingCharacters(in: .whitespacesAndNewlines),
-              !text.isEmpty else {
-            return nil
-        }
-        return text
+        latestPostProcessedResult?.outputText.nilIfBlank
     }
 
     private var textForCopy: String? {
@@ -46,7 +42,7 @@ struct HistoryRowView: View {
 
     private var canRunPostProcessing: Bool {
         transcriptionStatus == .completed &&
-        recording.transcription?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false &&
+        recording.transcription.nilIfBlank != nil &&
         !postProcessingActions.isEmpty
     }
 

@@ -89,8 +89,7 @@ struct HistoryView: View {
         }
 
         // If there's no transcription, delete the entire block
-        let text = recording.transcription ?? ""
-        if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+        if recording.transcription.nilIfBlank == nil {
             modelContext.delete(recording)
         }
     }
@@ -109,8 +108,7 @@ struct HistoryView: View {
                 recording.isFileDeleted = true
                 
                 // If there's no transcription, delete the entire block
-                let text = recording.transcription ?? ""
-                if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                if recording.transcription.nilIfBlank == nil {
                     modelContext.delete(recording)
                 }
             }
