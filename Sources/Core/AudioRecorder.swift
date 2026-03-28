@@ -1,8 +1,5 @@
 @preconcurrency import AVFoundation
-import AppKit
 import ScreenCaptureKit
-import CoreMedia
-import Accelerate
 
 public enum AudioRecorderError: Error, LocalizedError {
     case permissionDenied
@@ -34,24 +31,21 @@ public enum AudioRecorderError: Error, LocalizedError {
 public class AudioRecorder: NSObject, ObservableObject, @unchecked Sendable {
     // MARK: - Properties
 
-    private var engine: AVAudioEngine?
-    private var recordingMixer: AVAudioMixerNode?
-    private var micMixer: AVAudioMixerNode?
-    private var sysPlayerNode: AVAudioPlayerNode?
-
-    private var audioFile: AVAudioFile?
-    private var tapInstalled = false
-    private var graphInitialized = false
-    private var graphIncludesSystemAudio = false
-    private var tapBufferCount: Int = 0
-
-    // Modular Components
     private let streamBuffer = AudioStreamBuffer()
     private let levelMonitor = AudioLevelMonitor()
     private let deviceManager = CoreAudioDeviceManager()
-
-    // System Audio
-    private var scStream: SCStream?
+    private lazy var graphController = AudioGraphController(
+        deviceManager: deviceManager,
+        levelMonitor: levelMonitor
+    )
+    private let fileFactory = RecordingFileFactory()
+    private lazy var tapController = AudioTapController(
+        streamBuffer: streamBuffer,
+        levelMonitor: levelMonitor,
+        fileFactory: fileFactory
+    )
+    private let tapWatchdog = AudioTapWatchdog()
+    private let systemAudioCaptureService = SystemAudioCaptureService()
 
     // Config
     public var recordSystemAudio: Bool = false
@@ -61,7 +55,7 @@ public class AudioRecorder: NSObject, ObservableObject, @unchecked Sendable {
 
     @Published public var isRecording = false
     @Published public private(set) var audioLevel: Float = 0
-    public var currentRecordingURL: URL? { audioFile?.url }
+    public var currentRecordingURL: URL? { tapController.currentRecordingURL }
 
     // MARK: - Initializer & Pre-warm
 
@@ -138,16 +132,16 @@ public class AudioRecorder: NSObject, ObservableObject, @unchecked Sendable {
             // Step 3: build graph with mic-only (system audio is added later if needed)
             let savedSysAudio = recordSystemAudio
             recordSystemAudio = false
-            setupGraph()
+            graphController.setupGraph(recordSystemAudio: false)
             recordSystemAudio = savedSysAudio
 
-            guard let eng = engine else {
+            guard graphController.engine != nil else {
                 Log("prepareAudio: engine is nil after setupGraph", level: .error)
                 isPrewarming = false
                 return
             }
 
-            eng.prepare()
+            graphController.prepareEngine()
             Log("prepareAudio: engine prepared (not started) — graph ready for recording")
 
             isPrewarming = false
@@ -203,17 +197,18 @@ public class AudioRecorder: NSObject, ObservableObject, @unchecked Sendable {
 
         // If system-audio config changed since prepareAudio built the graph, rebuild.
         // Also add a short pause so macOS releases hardware before the new engine starts.
-        if graphInitialized && graphIncludesSystemAudio != recordSystemAudio {
+        if graphController.graphInitialized && graphController.graphIncludesSystemAudio != recordSystemAudio {
             Log("System audio config changed — rebuilding graph...")
-            engine?.stop()
-            teardownGraph()
+            graphController.stopEngine()
+            _ = tapController.finishRecording(on: graphController.recordingMixer)
+            graphController.teardownGraph()
             try await Task.sleep(nanoseconds: 200_000_000)
         }
 
         // Only do rate alignment + graph setup if the graph is not already running.
         // In the normal happy path prepareAudio() already did this — graphInitialized=true,
         // engine is started, and we just need to install the tap and open the file.
-        if !graphInitialized {
+        if !graphController.graphInitialized {
             // CRITICAL: Align output device sample rate BEFORE building the graph.
             // AVAudioEngine reads device sample rates at graph construction time (when inputNode/mainMixerNode
             // are first accessed). If input (BT HFP = 16kHz) != output (A2DP = 44100Hz) at that moment,
@@ -239,113 +234,52 @@ public class AudioRecorder: NSObject, ObservableObject, @unchecked Sendable {
                 try await Task.sleep(nanoseconds: 300_000_000)
             }
 
-            setupGraph()
-
-            guard let eng = engine else { throw AudioRecorderError.setupFailed }
-            eng.prepare()
-            do {
-                try eng.start()
-            } catch {
-                Log("Engine start failed: \(error)", level: .error)
-                throw AudioRecorderError.setupFailed
-            }
-        } else if graphIncludesSystemAudio != recordSystemAudio {
+            graphController.setupGraph(recordSystemAudio: recordSystemAudio)
+            graphController.prepareEngine()
+            try graphController.startEngine()
+        } else if graphController.graphIncludesSystemAudio != recordSystemAudio {
             // This branch is unreachable here (handled above), but kept as safety net.
             Log("startRecording: graph/sysAudio mismatch after rebuild guard — this is a bug", level: .error)
         }
 
-        guard let engine = engine, let mixer = recordingMixer else {
+        guard let mixer = graphController.recordingMixer else {
             throw AudioRecorderError.setupFailed
         }
 
-        let tapFormat = mixer.outputFormat(forBus: 0)
-        Log("Tap format: \(tapFormat.sampleRate)Hz, \(tapFormat.channelCount)ch")
-
-        self.streamBuffer.prepare(for: tapFormat)
-        self.clearAudioSamples()
-
-        let fileURL = getNewRecordingURL()
-        let settings: [String: Any] = [
-            AVFormatIDKey: Int(kAudioFormatLinearPCM),
-            AVSampleRateKey: tapFormat.sampleRate,
-            AVNumberOfChannelsKey: tapFormat.channelCount,
-            AVLinearPCMBitDepthKey: 16,
-            AVLinearPCMIsBigEndianKey: false,
-            AVLinearPCMIsFloatKey: false
-        ]
-
         do {
-            audioFile = try AVAudioFile(forWriting: fileURL, settings: settings)
-            Log("Created WAV file: \(tapFormat.sampleRate)Hz \(tapFormat.channelCount)ch — \(fileURL.path)")
+            _ = try tapController.prepareForRecording(on: mixer)
         } catch {
             Log("Failed to create audio file: \(error)", level: .error)
             throw AudioRecorderError.setupFailed
         }
 
-        if tapInstalled {
-            mixer.removeTap(onBus: 0)
-            tapInstalled = false
-        }
-
-        tapBufferCount = 0
-        mixer.installTap(onBus: 0, bufferSize: 4096, format: nil) { [weak self] buffer, time in
-            guard let self = self else { return }
-
-            // Diagnostic: log first buffer to confirm tap is receiving data
-            let count = self.tapBufferCount
-            if count == 0 {
-                Log("Tap FIRST buffer: \(buffer.frameLength) frames @ \(buffer.format.sampleRate)Hz \(buffer.format.channelCount)ch")
-            } else if count == 10 {
-                Log("Tap alive: 10 buffers received")
-            }
-            self.tapBufferCount += 1
-
-            do {
-                if let audioFile = self.audioFile {
-                    try audioFile.write(from: buffer)
-                }
-            } catch {
-                Log("Write error: \(error)", level: .error)
-            }
-            
-            self.streamBuffer.processBuffer(buffer)
-            self.levelMonitor.processBuffer(buffer)
-        }
-        tapInstalled = true
-
         // Start engine only if it is not already running (prepareAudio() may have started it).
-        if !engine.isRunning {
-            do {
-                try engine.start()
-            } catch {
-                Log("Engine start failed: \(error)", level: .error)
-                throw AudioRecorderError.setupFailed
-            }
+        if !graphController.isEngineRunning {
+            try graphController.startEngine()
         }
 
         // Watchdog: verify tap is actually receiving audio within 2 seconds.
         // If BT HFP mismatch fix failed or another OS-level issue occurred, the engine starts
         // without error but installTap silently receives zero buffers. Detect this early so
         // we can fail fast instead of saving an empty WAV file.
-        let watchdogDeadline = Date().addingTimeInterval(2.0)
-        while tapBufferCount == 0 && Date() < watchdogDeadline {
-            try await Task.sleep(nanoseconds: 100_000_000)
+        let receivedBuffers = await tapWatchdog.waitForBuffers { [weak tapController] in
+            tapController?.bufferCount ?? 0
         }
-        if tapBufferCount == 0 {
+        if !receivedBuffers {
             Log("Tap watchdog: 0 buffers after 2s — engine render graph is broken. Aborting.", level: .error)
-            engine.stop()
-            teardownGraph()
-            audioFile = nil
+            _ = tapController.finishRecording(on: graphController.recordingMixer)
+            graphController.stopEngine()
+            graphController.teardownGraph()
             throw AudioRecorderError.recordingFailed
         }
 
         if recordSystemAudio {
             if #available(macOS 12.3, *) {
-                if scStream == nil {
-                    try await startSystemAudioCapture()
+                if let sysPlayerNode = graphController.sysPlayerNode {
+                    try await systemAudioCaptureService.startCapture(with: sysPlayerNode)
                 }
             }
-            sysPlayerNode?.play()
+            graphController.sysPlayerNode?.play()
         }
 
         levelMonitor.startPublishing()
@@ -361,23 +295,13 @@ public class AudioRecorder: NSObject, ObservableObject, @unchecked Sendable {
         // Grace period to catch last samples
         try? await Task.sleep(nanoseconds: 300_000_000)
 
-        if let mixer = recordingMixer {
-            mixer.removeTap(onBus: 0)
-        }
-        tapInstalled = false
-
-        // Stop Screen Capture
         if #available(macOS 12.3, *) {
-            if let stream = scStream {
-                try? await stream.stopCapture()
-                scStream = nil
-            }
+            await systemAudioCaptureService.stopCapture()
         }
 
-        sysPlayerNode?.stop()
+        graphController.sysPlayerNode?.stop()
 
-        let url = audioFile?.url
-        audioFile = nil
+        let url = tapController.finishRecording(on: graphController.recordingMixer)
 
         levelMonitor.stopPublishing(resetToZero: true)
 
@@ -385,156 +309,14 @@ public class AudioRecorder: NSObject, ObservableObject, @unchecked Sendable {
         Log("Recording stopped")
 
         // Stop engine and fully release graph
-        engine?.stop()
-        teardownGraph()
+        graphController.stopEngine()
+        graphController.teardownGraph()
 
         return url
     }
 
-    // MARK: - Private Helpers
-
-    private func teardownGraph() {
-        guard graphInitialized else { return }
-
-        deviceManager.restoreOutputSampleRate()
-        levelMonitor.stopPublishing(resetToZero: true)
-
-        if let engine = engine {
-            if let mixer = recordingMixer {
-                engine.disconnectNodeInput(mixer)
-                engine.disconnectNodeOutput(mixer)
-                engine.detach(mixer)
-            }
-
-            if let mic = micMixer {
-                engine.disconnectNodeInput(mic)
-                engine.disconnectNodeOutput(mic)
-                engine.detach(mic)
-            }
-
-            if let player = sysPlayerNode {
-                engine.disconnectNodeInput(player)
-                engine.disconnectNodeOutput(player)
-                engine.detach(player)
-                sysPlayerNode = nil
-            }
-        }
-
-        recordingMixer = nil
-        micMixer = nil
-        engine = nil // Fully release the engine to free the microphone hardware
-        graphInitialized = false
-        graphIncludesSystemAudio = false
-        Log("AudioRecorder graph torn down (Engine Released)")
-    }
-
-    private func setupGraph() {
-        guard !graphInitialized else { return }
-
-        Log("Initializing AudioRecorder graph (systemAudio: \(recordSystemAudio))...")
-
-        let newEngine = AVAudioEngine()
-        self.engine = newEngine
-
-        let recMixer = AVAudioMixerNode()
-        let mMixer = AVAudioMixerNode()
-        self.recordingMixer = recMixer
-        self.micMixer = mMixer
-
-        let mainMixer = newEngine.mainMixerNode
-        mainMixer.outputVolume = 0.0
-
-        newEngine.attach(recMixer)
-        newEngine.attach(mMixer)
-
-        // Use native input format — do NOT force 16kHz.
-        // macOS AVAudioEngine strictly requires tap format == hardware input sample rate.
-        let inputNode = newEngine.inputNode
-        let inputFormat = inputNode.outputFormat(forBus: 0)
-        Log("Hardware input format: \(inputFormat.sampleRate)Hz, \(inputFormat.channelCount)ch")
-
-        // CRITICAL: All connections in the graph must use inputFormat (hardware input sample rate).
-        // Using a different format (e.g. mainMixer's 44100Hz output format) when input is 16kHz HFP
-        // causes AVAudioEngine to silently break the render graph — installTap receives zero buffers.
-        //
-        // For BT HFP (16kHz mono), pan must NOT be set — setting pan on a mono node
-        // causes the engine to stall silently (no crash, no error, zero tap buffers).
-
-        // inputNode → micMixer: use hardware input format (required by AVAudioEngine)
-        newEngine.connect(inputNode, to: mMixer, format: inputFormat)
-
-        // Pan only for stereo input (e.g. built-in mic or stereo aggregate device)
-        if inputFormat.channelCount >= 2 {
-            mMixer.pan = -1.0 // Left channel (mic side)
-        }
-
-        // micMixer → recordingMixer: use inputFormat to keep the graph consistent
-        newEngine.connect(mMixer, to: recMixer, format: inputFormat)
-
-        // System Audio → recordingMixer (only if enabled)
-        if recordSystemAudio {
-            if #available(macOS 12.3, *) {
-                let sysFormat = AVAudioFormat(commonFormat: .pcmFormatFloat32,
-                                              sampleRate: 48000, channels: 2, interleaved: false)!
-                let player = AVAudioPlayerNode()
-                newEngine.attach(player)
-                if inputFormat.channelCount >= 2 {
-                    player.pan = 1.0 // Right channel (system audio side)
-                }
-                newEngine.connect(player, to: recMixer, format: sysFormat)
-                self.sysPlayerNode = player
-            }
-        }
-
-        // recordingMixer → mainMixer: use inputFormat
-        // mainMixerNode handles SRC internally when output device differs
-        newEngine.connect(recMixer, to: mainMixer, format: inputFormat)
-        Log("Graph connections established. Input: \(inputFormat.sampleRate)Hz \(inputFormat.channelCount)ch")
-
-        graphInitialized = true
-        graphIncludesSystemAudio = recordSystemAudio
-        Log("AudioRecorder graph initialized")
-    }
-
-    @available(macOS 12.3, *)
-    private func startSystemAudioCapture() async throws {
-        let content = try await SCShareableContent.current
-        guard let display = content.displays.first else { throw AudioRecorderError.setupFailed }
-        guard let playerNode = sysPlayerNode else { return }
-
-        let filter = SCContentFilter(display: display, excludingApplications: [], exceptingWindows: [])
-        let config = SCStreamConfiguration()
-        config.capturesAudio = true
-        config.sampleRate = 48000
-        config.channelCount = 2
-
-        let stream = SCStream(filter: filter, configuration: config, delegate: nil)
-        let output = StreamOutput(playerNode: playerNode)
-
-        try stream.addStreamOutput(output, type: .audio, sampleHandlerQueue: DispatchQueue(label: "audio.capture.queue"))
-        try await stream.startCapture()
-
-        self.scStream = stream
-        objc_setAssociatedObject(self, "StreamOutput", output, .OBJC_ASSOCIATION_RETAIN)
-    }
-
-    private func getNewRecordingURL() -> URL {
-        let fileManager = FileManager.default
-        let appSupportURL = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-        let recordingsDir = appSupportURL.appendingPathComponent("Recod/Recordings")
-        try? fileManager.createDirectory(at: recordingsDir, withIntermediateDirectories: true)
-
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyyMMdd-HHmmss"
-        return recordingsDir.appendingPathComponent("recording-\(formatter.string(from: Date())).wav")
-    }
-
     @MainActor
     public func revealRecordingsInFinder() {
-        let fileManager = FileManager.default
-        if let appSupportURL = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first {
-             let recordingsDir = appSupportURL.appendingPathComponent("Recod/Recordings")
-             NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: recordingsDir.path)
-        }
+        fileFactory.revealRecordingsInFinder()
     }
 }
