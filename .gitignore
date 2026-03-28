@@ -99,3 +99,7 @@ Network Trash Folder
 Temporary Items
 .apdisk
 Packages/SherpaOnnx/sherpa-onnx.xcframework/
+
+# Project-local Serena/OpenCode runtime data
+.opencode
+.serena
